@@ -28,7 +28,7 @@ class DhanStore:
                 f"Dhan instruments not found at {csv_path}. Run dhan_refresher first."
             )
 
-        cls._df = pd.read_csv(csv_path)
+cls._df = pd.read_csv(csv_path, low_memory=False)
 
         # Core indexes
         cls._by_symbol = {

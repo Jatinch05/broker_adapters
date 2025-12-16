@@ -350,6 +350,9 @@ def bulk_upload():
                                  success_count=success_count, failed_count=failed_count)
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f'ERROR in bulk upload: {error_details}')
             flash(f'Error processing file: {str(e)}', 'error')
             return redirect(request.url)
     
