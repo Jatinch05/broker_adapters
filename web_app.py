@@ -275,48 +275,57 @@ def bulk_upload():
                         results.append(result)
                         continue
                     
-                    # Build order data
+                    # Build order data with correct parameter names for orchestrator
                     order_data = {
                         'symbol': str(row['Symbol']).strip().upper(),
                         'exchange': str(row['Exchange']).strip().upper(),
-                        'transaction_type': str(row['TransactionType']).strip().upper(),
-                        'quantity': int(row['Quantity']),
+                        'txn_type': str(row['TransactionType']).strip().upper(),
+                        'qty': int(row['Quantity']),
                         'order_type': str(row['OrderType']).strip().upper(),
-                        'product_type': str(row['ProductType']).strip().upper()
+                        'product': str(row['ProductType']).strip().upper(),
+                        'order_category': 'SUPER'
                     }
                     
                     # Add optional fields if present and not NaN
                     if 'Price' in row and not pd.isna(row['Price']) and row['Price'] != '':
                         order_data['price'] = float(row['Price'])
+                    else:
+                        order_data['price'] = None
                     
                     if 'TargetPrice' in row and not pd.isna(row['TargetPrice']) and row['TargetPrice'] != '':
                         order_data['target_price'] = float(row['TargetPrice'])
+                    else:
+                        order_data['target_price'] = 0
                     
                     if 'StopLoss' in row and not pd.isna(row['StopLoss']) and row['StopLoss'] != '':
-                        order_data['stop_loss'] = float(row['StopLoss'])
+                        order_data['stop_loss_price'] = float(row['StopLoss'])
+                    else:
+                        order_data['stop_loss_price'] = 0
                     
                     if 'TrailingStopLoss' in row and not pd.isna(row['TrailingStopLoss']) and row['TrailingStopLoss'] != '':
-                        order_data['trailing_stop_loss'] = float(row['TrailingStopLoss'])
+                        order_data['trailing_jump'] = float(row['TrailingStopLoss'])
+                    else:
+                        order_data['trailing_jump'] = 0
                     
                     if 'Tag' in row and not pd.isna(row['Tag']) and row['Tag'] != '':
                         order_data['tag'] = str(row['Tag']).strip()
                     
-                    # Place the order
-                    response = orchestrator.place_super_order(**order_data)
+                    # Place the order - pass order_data dict directly, not unpacked
+                    response = orchestrator.place_super_order(order_data)
                     
                     # Store in history
                     order_record = {
                         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                         'symbol': order_data['symbol'],
                         'exchange': order_data['exchange'],
-                        'type': order_data['transaction_type'],
-                        'quantity': order_data['quantity'],
+                        'type': order_data['txn_type'],
+                        'quantity': order_data['qty'],
                         'order_type': order_data['order_type'],
                         'price': order_data.get('price', 'MARKET'),
-                        'product': order_data['product_type'],
+                        'product': order_data['product'],
                         'target': order_data.get('target_price', 'N/A'),
-                        'stop_loss': order_data.get('stop_loss', 'N/A'),
-                        'trail_sl': order_data.get('trailing_stop_loss', 'N/A'),
+                        'stop_loss': order_data.get('stop_loss_price', 'N/A'),
+                        'trail_sl': order_data.get('trailing_jump', 'N/A'),
                         'tag': order_data.get('tag', ''),
                         'order_id': response.get('orderId', 'N/A'),
                         'status': 'Success'
