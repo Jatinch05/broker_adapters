@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Dhan Super Orders{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">Account Settings</div>
+    
+    <div style="padding: 20px; background: #f9fafb; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-bottom: 15px; color: #333;">Account Information</h3>
+        
+        <div style="display: grid; gap: 15px;">
+            <div>
+                <div style="font-size: 13px; color: #6b7280; margin-bottom: 5px;">Client ID</div>
+                <div style="font-weight: 600; color: #333;">{{ client_id }}</div>
+            </div>
+            
+            <div>
+                <div style="font-size: 13px; color: #6b7280; margin-bottom: 5px;">Session Status</div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="
+                        width: 10px;
+                        height: 10px;
+                        background: #10b981;
+                        border-radius: 50%;
+                        display: inline-block;
+                    "></span>
+                    <span style="font-weight: 600; color: #10b981;">Active</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-bottom: 15px; color: #333;">Security</h3>
+        
+        <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">
+            Your credentials are stored securely in your browser session and are automatically cleared when you logout.
+        </p>
+        
+        <a href="{{ url_for('logout') }}" class="btn btn-primary">
+            🔐 Logout
+        </a>
+    </div>
+
+    <div style="padding: 20px; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+        <h3 style="margin-bottom: 10px; color: #92400e;">⚠️ Important Notes</h3>
+        
+        <ul style="color: #92400e; font-size: 14px; margin-left: 20px; line-height: 1.6;">
+            <li>Always use strong, unique API credentials</li>
+            <li>Never share your access token with anyone</li>
+            <li>Monitor your order history regularly</li>
+            <li>Logout when finished trading</li>
+            <li>Keep your API credentials secure</li>
+        </ul>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Quick Actions</div>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <form method="POST" action="{{ url_for('refresh_instruments') }}">
+            <button type="submit" class="btn btn-success" style="width: 100%;">
+                🔄 Refresh Instruments
+            </button>
+        </form>
+        
+        <a href="{{ url_for('order_history_page') }}" class="btn btn-secondary" style="width: 100%; text-align: center;">
+            📊 View Order History
+        </a>
+        
+        <a href="{{ url_for('place_order') }}" class="btn btn-primary" style="width: 100%; text-align: center;">
+            📝 Place New Order
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">About</div>
+    
+    <div style="font-size: 14px; color: #6b7280; line-height: 1.8;">
+        <p style="margin-bottom: 15px;">
+            <strong style="color: #333;">Dhan Super Orders Web App</strong> - A user-friendly interface for placing super orders on Dhan.
+        </p>
+        
+        <p style="margin-bottom: 15px;">
+            This application uses the official Dhan API v2 to place bracket orders with:
+        </p>
+        
+        <ul style="margin-left: 20px; margin-bottom: 15px;">
+            <li>Entry leg (main order)</li>
+            <li>Target leg (take profit)</li>
+            <li>Stop loss leg (with optional trailing)</li>
+        </ul>
+        
+        <p style="font-size: 13px; color: #6b7280;">
+            Version: 1.0.0 | Documentation: <a href="https://dhanhq.co/docs/v2/" target="_blank" style="color: #667eea;">Dhan API Docs</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

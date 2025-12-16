@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}Place Order - Dhan Super Orders{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">Place Super Order</div>
+    
+    <form method="POST" action="{{ url_for('place_order') }}" id="orderForm">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            
+            <!-- Symbol & Exchange -->
+            <div class="form-group">
+                <label for="symbol">Trading Symbol *</label>
+                <input 
+                    type="text" 
+                    id="symbol" 
+                    name="symbol" 
+                    placeholder="e.g., HDFCBANK, RELIANCE"
+                    required
+                    style="text-transform: uppercase;">
+                <div class="hint">Enter the stock/instrument symbol</div>
+                <div id="symbolValidation" style="margin-top: 5px; font-size: 13px;"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="exchange">Exchange *</label>
+                <select id="exchange" name="exchange" required>
+                    <option value="">Select Exchange</option>
+                    <option value="NSE">NSE - National Stock Exchange</option>
+                    <option value="BSE">BSE - Bombay Stock Exchange</option>
+                    <option value="NFO">NFO - NSE Futures & Options</option>
+                    <option value="BFO">BFO - BSE Futures & Options</option>
+                    <option value="MCX">MCX - Commodities</option>
+                </select>
+            </div>
+
+            <!-- Transaction Type & Quantity -->
+            <div class="form-group">
+                <label for="txn_type">Transaction Type *</label>
+                <select id="txn_type" name="txn_type" required>
+                    <option value="">Select Type</option>
+                    <option value="BUY">BUY</option>
+                    <option value="SELL">SELL</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="qty">Quantity *</label>
+                <input 
+                    type="number" 
+                    id="qty" 
+                    name="qty" 
+                    placeholder="e.g., 1"
+                    min="1"
+                    required>
+                <div class="hint">Number of shares/lots</div>
+            </div>
+
+            <!-- Order Type & Price -->
+            <div class="form-group">
+                <label for="order_type">Order Type *</label>
+                <select id="order_type" name="order_type" required onchange="togglePrice()">
+                    <option value="">Select Order Type</option>
+                    <option value="LIMIT">LIMIT - Specify Price</option>
+                    <option value="MARKET">MARKET - Current Price</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="priceGroup">
+                <label for="price">Entry Price</label>
+                <input 
+                    type="number" 
+                    id="price" 
+                    name="price" 
+                    placeholder="e.g., 1500.00"
+                    step="0.01">
+                <div class="hint">Entry price (required for LIMIT orders)</div>
+            </div>
+
+            <!-- Product Type -->
+            <div class="form-group">
+                <label for="product">Product Type *</label>
+                <select id="product" name="product" required>
+                    <option value="">Select Product</option>
+                    <option value="CNC">CNC - Cash & Carry (Delivery)</option>
+                    <option value="INTRADAY">INTRADAY - Day Trading</option>
+                    <option value="MARGIN">MARGIN - Margin Trading</option>
+                    <option value="MTF">MTF - Margin Trade Funding</option>
+                </select>
+            </div>
+
+            <!-- Target & Stop Loss -->
+            <div class="form-group">
+                <label for="target_price">Target Price *</label>
+                <input 
+                    type="number" 
+                    id="target_price" 
+                    name="target_price" 
+                    placeholder="e.g., 1600.00"
+                    step="0.01"
+                    required>
+                <div class="hint">Take profit at this price</div>
+            </div>
+
+            <div class="form-group">
+                <label for="stop_loss_price">Stop Loss Price *</label>
+                <input 
+                    type="number" 
+                    id="stop_loss_price" 
+                    name="stop_loss_price" 
+                    placeholder="e.g., 1400.00"
+                    step="0.01"
+                    required>
+                <div class="hint">Exit if price reaches this level</div>
+            </div>
+
+            <!-- Trailing & Tag -->
+            <div class="form-group">
+                <label for="trailing_jump">Trailing Jump</label>
+                <input 
+                    type="number" 
+                    id="trailing_jump" 
+                    name="trailing_jump" 
+                    placeholder="e.g., 10.00"
+                    step="0.01"
+                    value="0">
+                <div class="hint">Trail stop loss by this amount (0 = no trailing)</div>
+            </div>
+
+            <div class="form-group">
+                <label for="tag">Tag (Optional)</label>
+                <input 
+                    type="text" 
+                    id="tag" 
+                    name="tag" 
+                    placeholder="e.g., my_strategy_001"
+                    maxlength="50">
+                <div class="hint">Custom identifier for tracking</div>
+            </div>
+        </div>
+
+        <!-- Price Validation Hints -->
+        <div id="priceHints" style="margin-top: 20px; padding: 15px; background: #dbeafe; border-radius: 8px; border-left: 4px solid #3b82f6; display: none;">
+            <strong style="color: #1e40af;">💡 Price Validation Rules:</strong>
+            <div id="hintContent" style="color: #1e3a8a; font-size: 14px; margin-top: 10px;"></div>
+        </div>
+
+        <!-- Submit Buttons -->
+        <div style="margin-top: 30px; display: flex; gap: 15px; flex-wrap: wrap;">
+            <button type="submit" class="btn btn-primary">
+                🚀 Place Super Order
+            </button>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Order Preview -->
+<div class="card">
+    <div class="card-header">Quick Guide</div>
+    
+    <div style="display: grid; gap: 10px; font-size: 14px;">
+        <div><strong>For BUY orders:</strong> stop_loss_price &lt; entry_price &lt; target_price</div>
+        <div><strong>For SELL orders:</strong> target_price &lt; entry_price &lt; stop_loss_price</div>
+        <div><strong>MARKET orders:</strong> Leave entry price empty</div>
+        <div><strong>LIMIT orders:</strong> Specify exact entry price</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePrice() {
+    const orderType = document.getElementById('order_type').value;
+    const priceGroup = document.getElementById('priceGroup');
+    const priceInput = document.getElementById('price');
+    
+    if (orderType === 'MARKET') {
+        priceInput.value = '';
+        priceInput.removeAttribute('required');
+        priceInput.disabled = true;
+        priceGroup.style.opacity = '0.5';
+    } else if (orderType === 'LIMIT') {
+        priceInput.disabled = false;
+        priceInput.setAttribute('required', 'required');
+        priceGroup.style.opacity = '1';
+    }
+}
+
+// Symbol validation
+let validateTimeout;
+document.getElementById('symbol').addEventListener('input', function() {
+    clearTimeout(validateTimeout);
+    const symbol = this.value.trim().toUpperCase();
+    const validationDiv = document.getElementById('symbolValidation');
+    
+    if (symbol.length < 2) {
+        validationDiv.innerHTML = '';
+        return;
+    }
+    
+    validationDiv.innerHTML = '<span style="color: #6b7280;">⏳ Validating...</span>';
+    
+    validateTimeout = setTimeout(() => {
+        fetch(`/api/validate-symbol/${symbol}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.valid) {
+                    validationDiv.innerHTML = `<span style="color: #10b981;">✓ Valid: ${data.instrument_type} (Lot Size: ${data.lot_size})</span>`;
+                } else {
+                    validationDiv.innerHTML = `<span style="color: #ef4444;">✗ ${data.message}</span>`;
+                }
+            })
+            .catch(() => {
+                validationDiv.innerHTML = '<span style="color: #6b7280;">Could not validate</span>';
+            });
+    }, 500);
+});
+
+// Show price hints based on transaction type
+function updatePriceHints() {
+    const txnType = document.getElementById('txn_type').value;
+    const hintsDiv = document.getElementById('priceHints');
+    const hintContent = document.getElementById('hintContent');
+    
+    if (txnType === 'BUY') {
+        hintsDiv.style.display = 'block';
+        hintContent.innerHTML = `
+            <div>For BUY orders, ensure:</div>
+            <div style="margin-top: 5px;">Stop Loss &lt; Entry Price &lt; Target Price</div>
+            <div style="margin-top: 5px; font-size: 13px; opacity: 0.8;">Example: SL: ₹1400, Entry: ₹1500, Target: ₹1600</div>
+        `;
+    } else if (txnType === 'SELL') {
+        hintsDiv.style.display = 'block';
+        hintContent.innerHTML = `
+            <div>For SELL orders, ensure:</div>
+            <div style="margin-top: 5px;">Target Price &lt; Entry Price &lt; Stop Loss</div>
+            <div style="margin-top: 5px; font-size: 13px; opacity: 0.8;">Example: Target: ₹2400, Entry: ₹2500, SL: ₹2600</div>
+        `;
+    } else {
+        hintsDiv.style.display = 'none';
+    }
+}
+
+document.getElementById('txn_type').addEventListener('change', updatePriceHints);
+
+// Initialize
+togglePrice();
+</script>
+{% endblock %}

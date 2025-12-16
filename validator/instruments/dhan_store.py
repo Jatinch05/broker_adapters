@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from validator.instruments.dhan_instrument import DhanInstrument
 
 
 class DhanStore:
@@ -49,24 +50,32 @@ class DhanStore:
     @classmethod
     def lookup_symbol(cls, symbol: str):
         """
-        Returns instrument row by symbol (case-insensitive).
+        Returns DhanInstrument by symbol (case-insensitive).
+        Returns None if not found.
         """
         if cls._df is None:
             raise RuntimeError("Call DhanStore.load() first")
 
         key = symbol.strip().upper()
-        return cls._by_symbol.get(key)
+        row = cls._by_symbol.get(key)
+        if row is None:
+            return None
+        return DhanInstrument(row)
 
     @classmethod
     def lookup_security_id(cls, security_id: str):
         """
-        Returns row by Dhan security ID.
+        Returns DhanInstrument by Dhan security ID.
+        Returns None if not found.
         """
         if cls._df is None:
             raise RuntimeError("Call DhanStore.load() first")
 
         key = str(security_id).strip()
-        return cls._by_security_id.get(key)
+        row = cls._by_security_id.get(key)
+        if row is None:
+            return None
+        return DhanInstrument(row)
 
     @classmethod
     def exists(cls, symbol: str) -> bool:

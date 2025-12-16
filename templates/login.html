@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Dhan Super Orders{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 100px auto;">
+    <div class="card">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">📈</div>
+            <h1 style="color: #667eea; margin-bottom: 10px;">Dhan Super Orders</h1>
+            <p style="color: #6b7280;">Login with your Dhan API credentials</p>
+        </div>
+
+        <form method="POST" action="{{ url_for('login') }}">
+            <div class="form-group">
+                <label for="client_id">Client ID</label>
+                <input 
+                    type="text" 
+                    id="client_id" 
+                    name="client_id" 
+                    placeholder="Enter your Dhan Client ID"
+                    required
+                    autocomplete="off">
+                <div class="hint">Your unique client ID from Dhan</div>
+            </div>
+
+            <div class="form-group">
+                <label for="access_token">Access Token</label>
+                <input 
+                    type="password" 
+                    id="access_token" 
+                    name="access_token" 
+                    placeholder="Enter your Dhan Access Token"
+                    required
+                    autocomplete="off">
+                <div class="hint">Your API access token from Dhan</div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">
+                🔐 Login
+            </button>
+        </form>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #f0f0f0; text-align: center;">
+            <p style="font-size: 14px; color: #6b7280; margin-bottom: 10px;">
+                Don't have API credentials?
+            </p>
+            <a href="https://dhanhq.co/" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 600;">
+                Get them from Dhan HQ →
+            </a>
+        </div>
+
+        <div style="margin-top: 20px; padding: 15px; background: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <p style="font-size: 13px; color: #92400e; margin-bottom: 5px;">
+                <strong>⚠️ Security Note:</strong>
+            </p>
+            <p style="font-size: 12px; color: #92400e;">
+                Your credentials are stored securely in your browser session and are never saved permanently.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

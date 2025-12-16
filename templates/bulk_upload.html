@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Order Upload{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📊 Bulk Order Upload</h1>
+    <p class="subtitle">Upload an Excel or CSV file to place multiple orders at once</p>
+
+    <!-- Instructions Card -->
+    <div class="card" style="margin-bottom: 30px;">
+        <h2>📝 Instructions</h2>
+        <ol style="line-height: 1.8;">
+            <li><strong>Download Template:</strong> <a href="/static/sample_orders.xlsx" download style="color: #667eea;">sample_orders.xlsx</a></li>
+            <li><strong>Fill in your orders</strong> following the format</li>
+            <li><strong>Upload the file</strong> using the form below</li>
+            <li><strong>Review results</strong> and check order history</li>
+        </ol>
+        
+        <h3 style="margin-top: 20px;">📋 Required Columns:</h3>
+        <ul style="line-height: 1.8;">
+            <li><code>Symbol</code> - Trading symbol (e.g., HDFCBANK, RELIANCE)</li>
+            <li><code>Exchange</code> - NSE, BSE, MCX, etc.</li>
+            <li><code>TransactionType</code> - BUY or SELL</li>
+            <li><code>Quantity</code> - Number of shares/lots</li>
+            <li><code>OrderType</code> - LIMIT or MARKET</li>
+            <li><code>ProductType</code> - CNC, INTRADAY, MARGIN, MTF, CO, BO</li>
+        </ul>
+        
+        <h3 style="margin-top: 20px;">📋 Optional Columns:</h3>
+        <ul style="line-height: 1.8;">
+            <li><code>Price</code> - Order price (required for LIMIT orders)</li>
+            <li><code>TargetPrice</code> - Target price for profit booking</li>
+            <li><code>StopLoss</code> - Stop loss price</li>
+            <li><code>TrailingStopLoss</code> - Trailing SL points</li>
+            <li><code>Tag</code> - Custom tag for tracking</li>
+        </ul>
+    </div>
+
+    <!-- Upload Form -->
+    <div class="card" style="margin-bottom: 30px;">
+        <h2>📤 Upload Orders File</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Select File (.xlsx, .xls, .csv)</label>
+                <input type="file" id="file" name="file" accept=".xlsx,.xls,.csv" required 
+                       style="width: 100%; padding: 10px; border: 2px dashed #667eea; border-radius: 8px; background: #f8f9fa;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 15px; font-size: 1.1em;">
+                🚀 Upload and Place Orders
+            </button>
+        </form>
+    </div>
+
+    <!-- Results Section -->
+    {% if results %}
+    <div class="card">
+        <h2>📈 Upload Results</h2>
+        <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+            <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; text-align: center;">
+                <div style="font-size: 2em; font-weight: bold;">{{ results|length }}</div>
+                <div>Total Orders</div>
+            </div>
+            <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; text-align: center;">
+                <div style="font-size: 2em; font-weight: bold;">{{ success_count }}</div>
+                <div>Successful</div>
+            </div>
+            <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white; border-radius: 8px; text-align: center;">
+                <div style="font-size: 2em; font-weight: bold;">{{ failed_count }}</div>
+                <div>Failed</div>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <th style="padding: 12px; text-align: left;">Row</th>
+                        <th style="padding: 12px; text-align: left;">Symbol</th>
+                        <th style="padding: 12px; text-align: left;">Status</th>
+                        <th style="padding: 12px; text-align: left;">Order ID</th>
+                        <th style="padding: 12px; text-align: left;">Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in results %}
+                    <tr style="border-bottom: 1px solid #e0e0e0; {% if loop.index % 2 == 0 %}background: #f8f9fa;{% endif %}">
+                        <td style="padding: 12px;">{{ result.row }}</td>
+                        <td style="padding: 12px; font-weight: bold;">{{ result.symbol }}</td>
+                        <td style="padding: 12px;">
+                            {% if result.status == 'Success' %}
+                                <span style="background: #38ef7d; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;">✓ Success</span>
+                            {% else %}
+                                <span style="background: #ff6a00; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;">✗ Failed</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px; font-family: monospace;">{{ result.order_id or 'N/A' }}</td>
+                        <td style="padding: 12px; font-size: 0.9em;">{{ result.message }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center;">
+            <a href="{{ url_for('order_history') }}" class="btn btn-primary">
+                📜 View Full Order History
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .subtitle {
+        color: #666;
+        font-size: 1.1em;
+        margin-bottom: 30px;
+    }
+
+    code {
+        background: #f0f0f0;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        color: #667eea;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .btn {
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1em;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+        display: inline-block;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 30px;
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+
+    @media (max-width: 768px) {
+        h1 {
+            font-size: 2em;
+        }
+
+        table {
+            font-size: 0.9em;
+        }
+
+        th, td {
+            padding: 8px !important;
+        }
+    }
+</style>
+{% endblock %}

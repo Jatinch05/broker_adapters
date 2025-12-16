@@ -48,9 +48,9 @@ class DhanValidator:
         if expected is None:
             raise DhanValidationError(f"Exchange '{exchange}' unsupported by Dhan")
 
-        if inst.raw["SEM_EXM_EXCHANGE_CODE"].upper() != expected:
+        if inst.exchange_segment.upper() != expected:
             raise DhanValidationError(
-                f"Exchange mismatch for {symbol}: Excel={exchange}, Dhan={inst.raw['SEM_EXM_EXCHANGE_CODE']}"
+                f"Exchange mismatch for {symbol}: Excel={exchange}, Dhan={inst.exchange_segment}"
             )
 
         lot = inst.lot_size
@@ -66,7 +66,7 @@ class DhanValidator:
         dhan_meta = {
             "symbol": inst.symbol,
             "exchange": expected,
-            "security_id": inst.raw.get("SEM_SM_SECURITY_ID"),
+            "security_id": inst.security_id,
             "lot_size": lot,
             "expiry": expiry,
             "instrument_type": inst.instrument_type,

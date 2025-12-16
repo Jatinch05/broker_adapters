@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Dhan Super Orders{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="value">{{ order_count }}</div>
+        <div class="label">Orders Placed</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">✓</div>
+        <div class="label">Connected</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">🚀</div>
+        <div class="label">Ready to Trade</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">Welcome to Dhan Super Orders</div>
+    
+    <p style="margin-bottom: 20px; color: #6b7280;">
+        You're logged in as: <strong style="color: #667eea;">{{ client_id }}</strong>
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+        <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; margin-bottom: 10px;">📝</div>
+            <h3 style="margin-bottom: 10px; color: #333;">Place New Order</h3>
+            <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">
+                Create a new super order with target and stop loss
+            </p>
+            <a href="{{ url_for('place_order') }}" class="btn btn-primary">
+                Place Order →
+            </a>
+        </div>
+
+        <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; margin-bottom: 10px;">📊</div>
+            <h3 style="margin-bottom: 10px; color: #333;">Bulk Upload</h3>
+            <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">
+                Upload Excel file to place multiple orders at once
+            </p>
+            <a href="{{ url_for('bulk_upload') }}" class="btn btn-primary" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+                Upload Orders →
+            </a>
+        </div>
+
+        <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; margin-bottom: 10px;">📜</div>
+            <h3 style="margin-bottom: 10px; color: #333;">Order History</h3>
+            <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">
+                View all your placed orders and their status
+            </p>
+            <a href="{{ url_for('order_history_page') }}" class="btn btn-secondary">
+                View History →
+            </a>
+        </div>
+
+        <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; text-align: center;">
+            <div style="font-size: 36px; margin-bottom: 10px;">🔄</div>
+            <h3 style="margin-bottom: 10px; color: #333;">Refresh Instruments</h3>
+            <p style="color: #6b7280; font-size: 14px; margin-bottom: 15px;">
+                Update the latest instrument data from Dhan
+            </p>
+            <form method="POST" action="{{ url_for('refresh_instruments') }}" style="display: inline;">
+                <button type="submit" class="btn btn-success">
+                    Refresh Data
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">What is a Super Order?</div>
+    
+    <div style="display: grid; gap: 15px;">
+        <div style="padding: 15px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #667eea;">
+            <strong style="color: #333;">📌 Entry Leg</strong>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">
+                Your main order - BUY or SELL at market or limit price
+            </p>
+        </div>
+
+        <div style="padding: 15px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #10b981;">
+            <strong style="color: #333;">🎯 Target Leg</strong>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">
+                Take profit - automatically exits when target price is reached
+            </p>
+        </div>
+
+        <div style="padding: 15px; background: #f9fafb; border-radius: 8px; border-left: 4px solid #ef4444;">
+            <strong style="color: #333;">🛡️ Stop Loss Leg</strong>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 5px;">
+                Protection - exits if price moves against you (with optional trailing)
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}
