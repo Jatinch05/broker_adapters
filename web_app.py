@@ -10,10 +10,28 @@ import os
 from datetime import datetime
 import pandas as pd
 from werkzeug.utils import secure_filename
+import logging
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
 from validator.instruments.dhan_store import DhanStore
 from validator.instruments.dhan_refresher import refresh_dhan_instruments
 from apis.dhan.auth import authenticate, DhanAuthError
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)  # Random secret key for sessions
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['UPLOAD_FOLDER'] = 'uploads'
+ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
+
+# Setup logging - logs to both console and file
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('dhan_app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Random secret key for sessions
@@ -283,29 +301,35 @@ def bulk_upload():
                         'qty': int(row['Quantity']),
                         'order_type': str(row['OrderType']).strip().upper(),
                         'product': str(row['ProductType']).strip().upper(),
-                        'order_category': 'SUPER'
+                        'order_category': 'SUPER',
+                        'price': None,
+                        'target_price': 0,
+                        'stop_loss_price': 0,
+                        'trailing_jump': 0
                     }
                     
                     # Add optional fields if present and not NaN
                     if 'Price' in row and not pd.isna(row['Price']) and row['Price'] != '':
                         order_data['price'] = float(row['Price'])
-                    else:
-                        order_data['price'] = None
                     
                     if 'TargetPrice' in row and not pd.isna(row['TargetPrice']) and row['TargetPrice'] != '':
                         order_data['target_price'] = float(row['TargetPrice'])
                     else:
-                        order_data['target_price'] = 0
+                        result['status'] = 'Failed'
+                        result['message'] = 'TargetPrice is required for Super Orders'
+                        results.append(result)
+                        continue
                     
                     if 'StopLoss' in row and not pd.isna(row['StopLoss']) and row['StopLoss'] != '':
                         order_data['stop_loss_price'] = float(row['StopLoss'])
                     else:
-                        order_data['stop_loss_price'] = 0
+                        result['status'] = 'Failed'
+                        result['message'] = 'StopLoss is required for Super Orders'
+                        results.append(result)
+                        continue
                     
                     if 'TrailingStopLoss' in row and not pd.isna(row['TrailingStopLoss']) and row['TrailingStopLoss'] != '':
                         order_data['trailing_jump'] = float(row['TrailingStopLoss'])
-                    else:
-                        order_data['trailing_jump'] = 0
                     
                     if 'Tag' in row and not pd.isna(row['Tag']) and row['Tag'] != '':
                         order_data['tag'] = str(row['Tag']).strip()
@@ -361,7 +385,7 @@ def bulk_upload():
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            print(f'ERROR in bulk upload: {error_details}')
+            logger.error(f'ERROR in bulk upload: {error_details}')
             flash(f'Error processing file: {str(e)}', 'error')
             return redirect(request.url)
     
@@ -375,11 +399,12 @@ if __name__ == '__main__':
     os.makedirs('static', exist_ok=True)
     os.makedirs('uploads', exist_ok=True)
     
-    print("=" * 60)
-    print("Dhan Super Order - Web Application")
-    print("=" * 60)
-    print("\n🚀 Starting server...")
-    print("📱 Open your browser and go to: http://localhost:5000")
-    print("\n⚠️  Press Ctrl+C to stop the server\n")
+    logger.info("=" * 60)
+    logger.info("Dhan Super Order - Web Application")
+    logger.info("=" * 60)
+    logger.info("\n🚀 Starting server...")
+    logger.info("📱 Open your browser and go to: http://localhost:5000")
+    logger.info("\n⚠️  Press Ctrl+C to stop the server\n")
+    logger.info("Logs being written to: dhan_app.log")
     
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
