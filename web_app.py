@@ -147,7 +147,7 @@ def place_order():
             order_history.insert(0, order_record)  # Add to beginning
             
             flash(f'✅ Order placed successfully! Order ID: {result["orderId"]}', 'success')
-            return redirect(url_for('order_history'))
+            return redirect(url_for('order_history_page'))
             
         except ValueError as e:
             flash(f'Invalid input: {str(e)}', 'error')
