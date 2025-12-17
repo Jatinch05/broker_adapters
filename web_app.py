@@ -137,6 +137,19 @@ def place_order():
                 'order_category': 'SUPER',
             }
             
+            # Add optional advanced lookup fields (for SENSEX/BSXOPT)
+            strike_price = request.form.get('strike_price', '').strip()
+            if strike_price:
+                order_data['strike_price'] = float(strike_price)
+            
+            expiry_date = request.form.get('expiry_date', '').strip()
+            if expiry_date:
+                order_data['expiry_date'] = expiry_date
+            
+            option_type = request.form.get('option_type', '').strip()
+            if option_type:
+                order_data['option_type'] = option_type.upper()
+            
             # Add tag if provided
             tag = request.form.get('tag', '').strip()
             if tag:
@@ -173,10 +186,13 @@ def place_order():
             return redirect(url_for('order_history_page'))
             
         except ValueError as e:
+            logger.error(f'Validation error in place_order: {str(e)}')
             flash(f'Invalid input: {str(e)}', 'error')
         except DhanSuperOrderError as e:
+            logger.error(f'Order placement error: {str(e)}')
             flash(f'Order failed: {str(e)}', 'error')
         except Exception as e:
+            logger.error(f'Unexpected error in place_order: {str(e)}', exc_info=True)
             flash(f'Unexpected error: {str(e)}', 'error')
     
     return render_template('place_order.html')
@@ -215,6 +231,7 @@ def settings():
 def validate_symbol(symbol):
     """API endpoint to validate symbol"""
     try:
+        logger.info(f'Validating symbol: {symbol}')
         # Ensure instruments are loaded
         store = DhanStore.load()
         instrument = store.lookup_symbol(symbol.upper())
@@ -231,6 +248,7 @@ def validate_symbol(symbol):
         else:
             return jsonify({'valid': False, 'message': 'Symbol not found'})
     except Exception as e:
+        logger.error(f'Error validating symbol {symbol}: {str(e)}')
         return jsonify({'valid': False, 'message': str(e)})
 
 
