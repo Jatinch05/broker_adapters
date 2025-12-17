@@ -25,9 +25,24 @@ class DhanValidator:
         order_type = base.order_type
 
         store = DhanStore.load()
-        inst = store.lookup_symbol(symbol)
+
+        # Advanced lookup for derivatives when extra fields are present (e.g., BSXOPT)
+        strike = row.get("StrikePrice") or row.get("strike_price")
+        expiry = row.get("ExpiryDate") or row.get("expiry_date")
+        opt_type = row.get("OptionType") or row.get("option_type")
+
+        inst = None
+        if strike or expiry or opt_type:
+            inst = store.lookup_by_details(symbol, strike_price=strike, expiry_date=expiry, option_type=opt_type)
+        else:
+            inst = store.lookup_symbol(symbol)
 
         if inst is None:
+            # Provide clearer error for derivative inputs
+            if strike or expiry or opt_type:
+                raise DhanValidationError(
+                    f"Instrument not found for {symbol} with strike={strike}, expiry={expiry}, option={opt_type}"
+                )
             raise DhanValidationError(f"Invalid symbol for Dhan: {symbol}")
 
         allowed = {"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "AMO"}
@@ -36,11 +51,13 @@ class DhanValidator:
                 f"order_type '{order_type}' not supported by Dhan"
             )
 
+        # Map Excel exchange to instrument EXCH_ID. F&O map to base exchange and must be derivatives.
         mapping = {
             "NSE": "NSE",
             "BSE": "BSE",
-            "NFO": "NSE_FNO",
-            "BFO": "BSE_FNO",
+            "NFO": "NSE",
+            "NSE_FNO": "NSE",
+            "BFO": "BSE",
             "MCX": "MCX",
         }
 
@@ -51,6 +68,12 @@ class DhanValidator:
         if inst.exchange_segment.upper() != expected:
             raise DhanValidationError(
                 f"Exchange mismatch for {symbol}: Excel={exchange}, Dhan={inst.exchange_segment}"
+            )
+
+        # If user selected an F&O exchange (NFO/NSE_FNO/BFO), instrument must be a derivative
+        if exchange in {"NFO", "NSE_FNO", "BFO"} and not inst.is_derivative:
+            raise DhanValidationError(
+                f"Selected exchange {exchange} requires a derivative instrument"
             )
 
         lot = inst.lot_size

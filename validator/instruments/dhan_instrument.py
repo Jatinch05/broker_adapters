@@ -15,30 +15,33 @@ class DhanInstrument:
 
     @property
     def symbol(self) -> str:
-        return str(self.raw.get("SEM_SM_SYMBOL", "")).strip().upper()
+        return str(self.raw.get("SYMBOL_NAME", "")).strip().upper()
 
     @property
     def security_id(self) -> str:
-        return str(self.raw.get("SEM_SM_SECURITY_ID", "")).strip()
+        return str(self.raw.get("SECURITY_ID", "")).strip()
 
     @property
     def exchange_segment(self) -> str:
-        return str(self.raw.get("SEM_EXM_EXCHANGE_CODE", "")).strip()
+        return str(self.raw.get("EXCH_ID", "")).strip().upper()
 
     @property
     def lot_size(self) -> int:
-        return int(self.raw.get("SEM_SM_LOT_SIZE", 1))
+        try:
+            return int(float(self.raw.get("LOT_SIZE", 1)))
+        except Exception:
+            return 1
 
     @property
     def expiry(self):
-        expiry_val = self.raw.get("SEM_SM_EXPIRY_DATE")
+        expiry_val = self.raw.get("SM_EXPIRY_DATE")
         if expiry_val in (None, "", "0", 0):
             return None
         return expiry_val
 
     @property
     def instrument_type(self) -> str:
-        return str(self.raw.get("SEM_SM_INSTRUMENT_TYPE", "")).strip()
+        return str(self.raw.get("INSTRUMENT_TYPE", "")).strip()
 
     @property
     def is_derivative(self) -> bool:
