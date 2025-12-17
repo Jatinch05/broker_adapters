@@ -84,6 +84,11 @@ class DhanSuperOrderOrchestrator:
             expiry_date = order_data.get('expiry_date')
             option_type = order_data.get('option_type')
             
+            import logging
+            logger = logging.getLogger(__name__)
+            if strike_price or expiry_date or option_type:
+                logger.info(f"Advanced lookup: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
+            
             if strike_price is not None or expiry_date is not None or option_type is not None:
                 # Use advanced lookup for symbols like BSXOPT
                 instrument = DhanStore.lookup_by_details(
@@ -92,8 +97,13 @@ class DhanSuperOrderOrchestrator:
                     expiry_date=expiry_date,
                     option_type=option_type
                 )
+                if instrument:
+                    logger.info(f"Advanced lookup found: {instrument.symbol}, security_id={instrument.security_id}")
+                else:
+                    logger.warning(f"Advanced lookup failed: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
             else:
                 # Standard lookup by symbol only
+                logger.info(f"Standard lookup: symbol={intent.symbol}")
                 instrument = DhanStore.lookup_symbol(intent.symbol)
             
             if instrument is None:
@@ -102,11 +112,14 @@ class DhanSuperOrderOrchestrator:
                 )
 
             # Step 4: Validate exchange mapping
+            # Map Excel exchange to instrument EXCH_ID (base exchange). Derivatives still require lot validation.
             exchange_mapping = {
-                "NSE": "NSE_EQ",
-                "BSE": "BSE_EQ",
-                "NFO": "NSE_FNO",
-                "BFO": "BSE_FNO",
+                "NSE": "NSE",
+                "BSE": "BSE",
+                "NFO": "NSE",
+                "NSE_FNO": "NSE",
+                "BFO": "BSE",
+                "BSE_FNO": "BSE",
                 "MCX": "MCX",
             }
 

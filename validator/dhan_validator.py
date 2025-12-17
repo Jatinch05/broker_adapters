@@ -58,6 +58,7 @@ class DhanValidator:
             "NFO": "NSE",
             "NSE_FNO": "NSE",
             "BFO": "BSE",
+            "BSE_FNO": "BSE",
             "MCX": "MCX",
         }
 
