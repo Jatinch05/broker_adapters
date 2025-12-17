@@ -79,7 +79,23 @@ class DhanSuperOrderOrchestrator:
             intent = DhanSuperOrderIntent(**order_data)
 
             # Step 3: Resolve instrument details
-            instrument = DhanStore.lookup_symbol(intent.symbol)
+            # Check if additional details provided for lookup (strike, expiry, option_type)
+            strike_price = order_data.get('strike_price')
+            expiry_date = order_data.get('expiry_date')
+            option_type = order_data.get('option_type')
+            
+            if strike_price is not None or expiry_date is not None or option_type is not None:
+                # Use advanced lookup for symbols like BSXOPT
+                instrument = DhanStore.lookup_by_details(
+                    symbol=intent.symbol,
+                    strike_price=strike_price,
+                    expiry_date=expiry_date,
+                    option_type=option_type
+                )
+            else:
+                # Standard lookup by symbol only
+                instrument = DhanStore.lookup_symbol(intent.symbol)
+            
             if instrument is None:
                 raise DhanSuperOrderError(
                     f"Symbol '{intent.symbol}' not found in Dhan instruments"

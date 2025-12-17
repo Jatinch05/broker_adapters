@@ -313,6 +313,16 @@ def bulk_upload():
                         'trailing_jump': 0
                     }
                     
+                    # Add optional advanced lookup fields (for SENSEX/BSXOPT-like symbols)
+                    if 'StrikePrice' in row and not pd.isna(row['StrikePrice']) and row['StrikePrice'] != '':
+                        order_data['strike_price'] = float(row['StrikePrice'])
+                    
+                    if 'ExpiryDate' in row and not pd.isna(row['ExpiryDate']) and row['ExpiryDate'] != '':
+                        order_data['expiry_date'] = str(row['ExpiryDate']).strip()
+                    
+                    if 'OptionType' in row and not pd.isna(row['OptionType']) and row['OptionType'] != '':
+                        order_data['option_type'] = str(row['OptionType']).strip().upper()
+                    
                     # Add optional fields if present and not NaN
                     if 'Price' in row and not pd.isna(row['Price']) and row['Price'] != '':
                         order_data['price'] = float(row['Price'])

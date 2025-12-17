@@ -34,7 +34,18 @@
             <li><code>StopLoss</code> - Stop loss price</li>
             <li><code>TrailingStopLoss</code> - Trailing SL points</li>
             <li><code>Tag</code> - Custom tag for tracking</li>
+            <li><code>StrikePrice</code> - Strike price (for SENSEX/BSXOPT options)</li>
+            <li><code>ExpiryDate</code> - Expiry date in YYYY-MM-DD (for SENSEX/BSXOPT options)</li>
+            <li><code>OptionType</code> - CE or PE (for SENSEX/BSXOPT options)</li>
         </ul>
+        
+        <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+            <strong>📌 Note for SENSEX Options:</strong>
+            <p style="margin: 5px 0 0 0; font-size: 0.95em;">
+                SENSEX options use symbol <code>BSXOPT</code>. To specify which contract, add:
+                <code>StrikePrice</code>, <code>ExpiryDate</code>, and <code>OptionType</code> columns.
+            </p>
+        </div>
     </div>
 
     <!-- Upload Form -->

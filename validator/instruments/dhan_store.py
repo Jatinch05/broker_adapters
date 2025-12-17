@@ -111,6 +111,52 @@ class DhanStore:
         return DhanInstrument(row)
 
     @classmethod
+    def lookup_by_details(cls, symbol: str, strike_price: float = None, expiry_date: str = None, option_type: str = None):
+        """
+        Returns DhanInstrument by symbol with optional strike, expiry, and option type.
+        Useful for SENSEX/BSXOPT where multiple instruments share the same symbol.
+        
+        Args:
+            symbol: Trading symbol (e.g., "BSXOPT", "NIFTY")
+            strike_price: Strike price (e.g., 85000)
+            expiry_date: Expiry date in YYYY-MM-DD format (e.g., "2025-12-18")
+            option_type: Option type - "CE" or "PE"
+            
+        Returns:
+            DhanInstrument if found, None otherwise
+        """
+        if cls._df is None:
+            raise RuntimeError("Call DhanStore.load() first")
+
+        key = symbol.strip().upper()
+        
+        # If no additional filters, use standard lookup
+        if strike_price is None and expiry_date is None and option_type is None:
+            return cls.lookup_symbol(symbol)
+        
+        # Filter the dataframe
+        filtered = cls._df[cls._df['SYMBOL_NAME'].str.upper() == key]
+        
+        if strike_price is not None:
+            filtered = filtered[filtered['STRIKE_PRICE'] == strike_price]
+        
+        if expiry_date is not None:
+            filtered = filtered[filtered['SM_EXPIRY_DATE'] == expiry_date]
+        
+        if option_type is not None:
+            opt_type = option_type.strip().upper()
+            filtered = filtered[filtered['OPTION_TYPE'] == opt_type]
+        
+        if len(filtered) == 0:
+            return None
+        
+        if len(filtered) > 1:
+            # Multiple matches, return the first one (or could raise an error)
+            return DhanInstrument(filtered.iloc[0])
+        
+        return DhanInstrument(filtered.iloc[0])
+
+    @classmethod
     def exists(cls, symbol: str) -> bool:
         return cls.lookup_symbol(symbol) is not None
 
