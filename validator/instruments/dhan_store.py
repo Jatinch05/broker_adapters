@@ -182,26 +182,35 @@ class DhanStore:
         row = cls._by_symbol.get(key)
         if row is None and cls._df is None and cls._csv_path:
             # Streaming find: scan CSV in chunks to find the first match
-            for chunk in pd.read_csv(
-                cls._csv_path,
-                usecols=['SYMBOL_NAME','SECURITY_ID','EXCH_ID','LOT_SIZE','SM_EXPIRY_DATE','STRIKE_PRICE','OPTION_TYPE','INSTRUMENT_TYPE'],
-                dtype={
-                    'SYMBOL_NAME':'string','SECURITY_ID':'string','EXCH_ID':'string','LOT_SIZE':'float32',
-                    'SM_EXPIRY_DATE':'string','STRIKE_PRICE':'float64','OPTION_TYPE':'string','INSTRUMENT_TYPE':'string'
-                },
-                chunksize=50000,
-                engine='c'
-            ):
-                # Normalize symbol column to uppercase for compare
-                chunk['SYMBOL_UP'] = chunk['SYMBOL_NAME'].str.upper()
-                matches = chunk[chunk['SYMBOL_UP'] == key]
-                if len(matches):
-                    row = matches.iloc[0]
-                    cls._by_symbol[key] = row
-                    sec_id = str(row.get('SECURITY_ID','')).strip()
-                    if sec_id:
-                        cls._by_security_id[sec_id] = row
-                    break
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Streaming lookup for symbol: {key}")
+            try:
+                for chunk in pd.read_csv(
+                    cls._csv_path,
+                    usecols=['SYMBOL_NAME','SECURITY_ID','EXCH_ID','LOT_SIZE','SM_EXPIRY_DATE','STRIKE_PRICE','OPTION_TYPE','INSTRUMENT_TYPE'],
+                    dtype={
+                        'SYMBOL_NAME':'string','SECURITY_ID':'string','EXCH_ID':'string','LOT_SIZE':'float32',
+                        'SM_EXPIRY_DATE':'string','STRIKE_PRICE':'float64','OPTION_TYPE':'string','INSTRUMENT_TYPE':'string'
+                    },
+                    chunksize=50000,
+                    engine='c'
+                ):
+                    # Normalize symbol column to uppercase for compare
+                    chunk['SYMBOL_UP'] = chunk['SYMBOL_NAME'].str.upper()
+                    matches = chunk[chunk['SYMBOL_UP'] == key]
+                    if len(matches):
+                        row = matches.iloc[0]
+                        cls._by_symbol[key] = row
+                        sec_id = str(row.get('SECURITY_ID','')).strip()
+                        if sec_id:
+                            cls._by_security_id[sec_id] = row
+                        logger.info(f"Streaming found: {key}, security_id={sec_id}")
+                        break
+                if row is None:
+                    logger.warning(f"Streaming lookup failed for: {key}")
+            except Exception as e:
+                logger.error(f"Streaming lookup error for {key}: {e}")
         if row is None:
             return None
         return DhanInstrument(row)

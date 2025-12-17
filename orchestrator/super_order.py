@@ -86,6 +86,7 @@ class DhanSuperOrderOrchestrator:
             
             import logging
             logger = logging.getLogger(__name__)
+            logger.info(f"Order placement attempt: symbol={intent.symbol}, exchange={intent.exchange}")
             if strike_price or expiry_date or option_type:
                 logger.info(f"Advanced lookup: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
             
@@ -105,6 +106,10 @@ class DhanSuperOrderOrchestrator:
                 # Standard lookup by symbol only
                 logger.info(f"Standard lookup: symbol={intent.symbol}")
                 instrument = DhanStore.lookup_symbol(intent.symbol)
+                if instrument:
+                    logger.info(f"Standard lookup found: {instrument.symbol}, security_id={instrument.security_id}")
+                else:
+                    logger.warning(f"Standard lookup failed for: {intent.symbol}")
             
             if instrument is None:
                 raise DhanSuperOrderError(
