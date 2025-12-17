@@ -1,5 +1,0 @@
-Symbol,Exchange,TransactionType,Quantity,OrderType,Price,ProductType,TargetPrice,StopLoss,TrailingStopLoss,Tag
-HDFCBANK,NSE,BUY,1,LIMIT,1500,CNC,1600,1400,10,Sample Order 1
-RELIANCE,NSE,SELL,2,LIMIT,2500,INTRADAY,2400,2600,15,Sample Order 2
-TCS,NSE,BUY,1,MARKET,,CNC,3800,3500,20,Market Order Example
-INFY,NSE,BUY,5,LIMIT,1450,INTRADAY,1500,1420,5,Intraday Order
