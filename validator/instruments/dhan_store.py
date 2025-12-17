@@ -154,7 +154,21 @@ class DhanStore:
                 expiry = row.get('SM_EXPIRY_DATE')
                 strike = row.get('STRIKE_PRICE')
                 opt_type = row.get('OPTION_TYPE')
+                underlying = row.get('UNDERLYING_SYMBOL')
+                
                 if (not pd.isna(expiry)) and pd.notna(strike) and (not pd.isna(opt_type)) and str(opt_type).strip() != "":
+                    # Index by underlying symbol for NIFTY/BANKNIFTY, and by symbol for BSXOPT
+                    if pd.notna(underlying) and str(underlying).strip() != "":
+                        underlying_key = str(underlying).strip().upper()
+                        deriv_key = (
+                            underlying_key,
+                            float(strike),
+                            str(expiry),
+                            str(opt_type).strip().upper()
+                        )
+                        cls._derivative_index[deriv_key] = row
+                    
+                    # Also index by symbol for BSXOPT-style lookups
                     key = (
                         symbol,
                         float(strike),
@@ -263,7 +277,17 @@ class DhanStore:
 
         # Fallback
         if cls._df is not None:
-            filtered = cls._df[cls._df['SYMBOL_NAME'].str.upper() == key_symbol]
+            # When strike/expiry/option are provided, filter by UNDERLYING_SYMBOL (for NIFTY, BANKNIFTY, etc.)
+            # Otherwise filter by SYMBOL_NAME (for BSXOPT)
+            if strike_price is not None or expiry_date is not None or option_type is not None:
+                # Check if UNDERLYING_SYMBOL column exists
+                if 'UNDERLYING_SYMBOL' in cls._df.columns:
+                    filtered = cls._df[cls._df['UNDERLYING_SYMBOL'].str.upper() == key_symbol]
+                else:
+                    filtered = cls._df[cls._df['SYMBOL_NAME'].str.upper() == key_symbol]
+            else:
+                filtered = cls._df[cls._df['SYMBOL_NAME'].str.upper() == key_symbol]
+            
             if strike_price is not None:
                 try:
                     strike_val = float(strike_price)
@@ -284,16 +308,24 @@ class DhanStore:
             try:
                 for chunk in pd.read_csv(
                     cls._csv_path,
-                    usecols=['SYMBOL_NAME','SECURITY_ID','EXCH_ID','LOT_SIZE','SM_EXPIRY_DATE','STRIKE_PRICE','OPTION_TYPE','INSTRUMENT_TYPE'],
+                    usecols=['SYMBOL_NAME','SECURITY_ID','EXCH_ID','LOT_SIZE','SM_EXPIRY_DATE','STRIKE_PRICE','OPTION_TYPE','INSTRUMENT_TYPE','UNDERLYING_SYMBOL'],
                     dtype={
                         'SYMBOL_NAME':'string','SECURITY_ID':'string','EXCH_ID':'string','LOT_SIZE':'float32',
-                        'SM_EXPIRY_DATE':'string','STRIKE_PRICE':'float64','OPTION_TYPE':'string','INSTRUMENT_TYPE':'string'
+                        'SM_EXPIRY_DATE':'string','STRIKE_PRICE':'float64','OPTION_TYPE':'string','INSTRUMENT_TYPE':'string','UNDERLYING_SYMBOL':'string'
                     },
                     chunksize=50000,
                     engine='c'
                 ):
                     chunk['SYMBOL_UP'] = chunk['SYMBOL_NAME'].str.upper()
-                    filtered = chunk[chunk['SYMBOL_UP'] == key_symbol]
+                    chunk['UNDERLYING_UP'] = chunk['UNDERLYING_SYMBOL'].str.upper()
+                    
+                    # When strike/expiry/option are provided, filter by UNDERLYING_SYMBOL (for NIFTY, BANKNIFTY, etc.)
+                    # Otherwise filter by SYMBOL_NAME (for BSXOPT)
+                    if strike_price is not None or expiry_date is not None or opt_upper is not None:
+                        filtered = chunk[chunk['UNDERLYING_UP'] == key_symbol]
+                    else:
+                        filtered = chunk[chunk['SYMBOL_UP'] == key_symbol]
+                    
                     if strike_price is not None:
                         try:
                             strike_val = float(strike_price)
