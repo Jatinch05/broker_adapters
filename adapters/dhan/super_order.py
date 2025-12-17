@@ -1,4 +1,5 @@
 import requests
+import time
 from typing import Dict, Any
 from adapters.dhan.errors import DhanSuperOrderError
 
@@ -48,12 +49,23 @@ def place_dhan_super_order(
     if intent.tag:
         payload["correlationId"] = intent.tag
 
-    response = requests.post(
-        url,
-        json=payload,
-        headers=headers,
-        timeout=10,
-    )
+    # Retry once on timeout/connection errors with a short backoff to avoid long hangs
+    max_attempts = 2
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=5,  # keep short to avoid long hangs during bulk
+            )
+            break
+        except (requests.Timeout, requests.ConnectionError) as exc:  # pragma: no cover
+            last_exc = exc
+            if attempt == max_attempts:
+                raise DhanSuperOrderError(f"Super Order request failed: {exc}") from exc
+            time.sleep(0.5)
 
     if response.status_code != 200:
         raise DhanSuperOrderError(

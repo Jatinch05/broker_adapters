@@ -282,7 +282,11 @@ class DhanStore:
             if strike_price is not None or expiry_date is not None or option_type is not None:
                 # Check if UNDERLYING_SYMBOL column exists
                 if 'UNDERLYING_SYMBOL' in cls._df.columns:
-                    filtered = cls._df[cls._df['UNDERLYING_SYMBOL'].str.upper() == key_symbol]
+                    # Try underlying first; if not present (e.g., BSXOPT), also allow symbol match
+                    filtered = cls._df[
+                        (cls._df['UNDERLYING_SYMBOL'].str.upper() == key_symbol) |
+                        (cls._df['SYMBOL_NAME'].str.upper() == key_symbol)
+                    ]
                 else:
                     filtered = cls._df[cls._df['SYMBOL_NAME'].str.upper() == key_symbol]
             else:
@@ -322,7 +326,10 @@ class DhanStore:
                     # When strike/expiry/option are provided, filter by UNDERLYING_SYMBOL (for NIFTY, BANKNIFTY, etc.)
                     # Otherwise filter by SYMBOL_NAME (for BSXOPT)
                     if strike_price is not None or expiry_date is not None or opt_upper is not None:
-                        filtered = chunk[chunk['UNDERLYING_UP'] == key_symbol]
+                        filtered = chunk[
+                            (chunk['UNDERLYING_UP'] == key_symbol) |
+                            (chunk['SYMBOL_UP'] == key_symbol)
+                        ]
                     else:
                         filtered = chunk[chunk['SYMBOL_UP'] == key_symbol]
                     

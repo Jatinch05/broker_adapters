@@ -11,6 +11,7 @@ from datetime import datetime
 import pandas as pd
 from werkzeug.utils import secure_filename
 import logging
+import time
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
 from validator.instruments.dhan_store import DhanStore
 from validator.instruments.dhan_refresher import refresh_dhan_instruments
@@ -48,6 +49,33 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 # Limit to last 1000 orders to prevent memory bloat
 order_history = []
 MAX_ORDER_HISTORY = 1000
+
+# Rate limiting for Dhan API: 25 orders/second
+DHAN_RATE_LIMIT = 25  # orders per second
+RATE_LIMIT_WINDOW = 1.0  # 1 second window
+rate_limit_timestamps = []
+
+
+def rate_limit_wait():
+    """Ensure we don't exceed Dhan's 25 orders/second rate limit"""
+    global rate_limit_timestamps
+    current_time = time.time()
+    
+    # Remove timestamps older than 1 second
+    rate_limit_timestamps = [t for t in rate_limit_timestamps if current_time - t < RATE_LIMIT_WINDOW]
+    
+    # If we've hit the limit, wait until we can proceed
+    if len(rate_limit_timestamps) >= DHAN_RATE_LIMIT:
+        sleep_time = RATE_LIMIT_WINDOW - (current_time - rate_limit_timestamps[0])
+        if sleep_time > 0:
+            logger.info(f"Rate limit reached, waiting {sleep_time:.2f}s")
+            time.sleep(sleep_time)
+            # Clean up old timestamps after waiting
+            current_time = time.time()
+            rate_limit_timestamps = [t for t in rate_limit_timestamps if current_time - t < RATE_LIMIT_WINDOW]
+    
+    # Record this request
+    rate_limit_timestamps.append(current_time)
 
 
 def allowed_file(filename):
@@ -372,6 +400,10 @@ def bulk_upload():
                     if 'Tag' in row and not pd.isna(row['Tag']) and row['Tag'] != '':
                         order_data['tag'] = str(row['Tag']).strip()
                     
+                    # Rate limit to respect Dhan's 25 orders/sec
+                    logger.info(f"Placing order row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']} type={order_data['order_type']}")
+                    rate_limit_wait()
+
                     # Place the order - pass order_data dict directly, not unpacked
                     response = orchestrator.place_super_order(order_data)
                     
