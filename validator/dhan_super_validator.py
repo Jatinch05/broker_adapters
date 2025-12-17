@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Any, List, Tuple, Hashable
+from typing import Dict, Any, List, Tuple, Hashable, Optional
 import pandas as pd
 
 from pydantic import BaseModel, ValidationError, field_validator
@@ -14,6 +14,9 @@ class DhanSuperOrderIntent(BaseModel):
     order_type: str
     price: float | None = None
     product: str
+
+    # Optional correlation/tag
+    tag: Optional[str] = None
 
     target_price: float
     stop_loss_price: float
@@ -57,6 +60,13 @@ class DhanSuperOrderIntent(BaseModel):
                 "Invalid product for Super Order. Allowed: INTRADAY, CNC, MARGIN, MTF"
             )
         return v
+
+    @field_validator("tag")
+    def norm_tag(cls, v: Optional[str]):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
 
     @field_validator("order_category")
     def validate_category(cls, v: str):
