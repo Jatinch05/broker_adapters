@@ -43,19 +43,33 @@ class DhanStore:
     def load(cls):
         """
         Loads the CSV from disk, builds indexes.
-        Auto-refreshes if data is >1 day old.
+        Auto-refreshes if data is >1 day old (disabled on Render to save memory).
         Called once per session.
         Optimized for memory efficiency.
         """
-        # Auto-refresh if stale
-        if cls._is_stale():
+        csv_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "dhan_instruments.csv"
+        )
+        
+        # Auto-refresh if stale (only if not on Render or file missing)
+        # On Render, use manual refresh to avoid memory issues
+        is_render = os.environ.get('RENDER') == 'true'
+        file_missing = not os.path.exists(csv_path)
+        
+        if cls._is_stale() and (not is_render or file_missing):
             try:
                 from validator.instruments.dhan_refresher import refresh_dhan_instruments
+                import logging
+                logging.info("Auto-refreshing stale instruments data...")
                 refresh_dhan_instruments()
             except Exception as e:
                 # Log warning but continue with existing data if available
                 import logging
                 logging.warning(f"Failed to auto-refresh instruments: {e}")
+        elif is_render and cls._is_stale() and not file_missing:
+            import logging
+            logging.warning("Instruments data is stale but auto-refresh disabled on Render. Use manual refresh from dashboard.")
         
         csv_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
