@@ -146,7 +146,8 @@ class DhanSuperOrderOrchestrator:
             result = place_dhan_super_order(
                 intent=intent,
                 security_id=instrument.security_id,
-                exchange_segment=instrument.exchange_segment,
+                # Use user-selected exchange for API call (required by Dhan). Instrument exchange is used only for validation above.
+                exchange_segment=intent.exchange,
                 client_id=self.client_id,
                 access_token=self.access_token,
             )
