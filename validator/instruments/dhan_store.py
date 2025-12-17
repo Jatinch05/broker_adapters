@@ -1,11 +1,14 @@
 import os
 import pandas as pd
+import json
+from datetime import datetime, timedelta
 from validator.instruments.dhan_instrument import DhanInstrument
 
 
 class DhanStore:
     """
     Loads dhan_instruments.csv and provides fast lookup utilities.
+    Auto-refreshes if data is stale (>1 day old).
     """
 
     _df = None
@@ -13,12 +16,47 @@ class DhanStore:
     _by_security_id = None
 
     @classmethod
+    def _is_stale(cls) -> bool:
+        """Check if instruments data is older than 1 day"""
+        csv_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "dhan_instruments.csv"
+        )
+        meta_path = csv_path.replace(".csv", "_meta.json")
+        
+        if not os.path.exists(meta_path):
+            return True  # No metadata, consider stale
+        
+        try:
+            with open(meta_path, 'r') as f:
+                meta = json.load(f)
+            
+            last_updated = datetime.fromisoformat(meta['last_updated'])
+            age = datetime.now() - last_updated
+            
+            # Stale if older than 1 day
+            return age > timedelta(days=1)
+        except Exception:
+            return True  # Error reading metadata, consider stale
+
+    @classmethod
     def load(cls):
         """
         Loads the CSV from disk, builds indexes.
+        Auto-refreshes if data is >1 day old.
         Called once per session.
         Optimized for memory efficiency.
         """
+        # Auto-refresh if stale
+        if cls._is_stale():
+            try:
+                from validator.instruments.dhan_refresher import refresh_dhan_instruments
+                refresh_dhan_instruments()
+            except Exception as e:
+                # Log warning but continue with existing data if available
+                import logging
+                logging.warning(f"Failed to auto-refresh instruments: {e}")
+        
         csv_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
             "dhan_instruments.csv"
