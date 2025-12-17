@@ -22,16 +22,21 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 
-# Setup logging - logs to both console and file
+# Setup logging - logs to console (visible in Render)
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('dhan_app.log'),
-        logging.StreamHandler()
+        logging.StreamHandler()  # Console output only for Render
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Also log to file if running locally
+if not os.environ.get('RENDER'):
+    file_handler = logging.FileHandler('dhan_app.log')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Random secret key for sessions
