@@ -40,7 +40,9 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 
 # Store order history in memory (in production, use a database)
+# Limit to last 1000 orders to prevent memory bloat
 order_history = []
+MAX_ORDER_HISTORY = 1000
 
 
 def allowed_file(filename):
@@ -163,6 +165,9 @@ def place_order():
                 'stop_loss_price': order_data['stop_loss_price'],
             }
             order_history.insert(0, order_record)  # Add to beginning
+            # Keep only last MAX_ORDER_HISTORY orders
+            if len(order_history) > MAX_ORDER_HISTORY:
+                order_history.pop()
             
             flash(f'✅ Order placed successfully! Order ID: {result["orderId"]}', 'success')
             return redirect(url_for('order_history_page'))
@@ -355,6 +360,9 @@ def bulk_upload():
                         'status': 'Success'
                     }
                     order_history.append(order_record)
+                    # Keep only last MAX_ORDER_HISTORY orders
+                    if len(order_history) > MAX_ORDER_HISTORY:
+                        order_history.pop(0)
                     
                     result['status'] = 'Success'
                     result['message'] = 'Order placed successfully'

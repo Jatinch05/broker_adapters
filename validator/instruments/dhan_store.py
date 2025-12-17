@@ -17,6 +17,7 @@ class DhanStore:
         """
         Loads the CSV from disk, builds indexes.
         Called once per session.
+        Optimized for memory efficiency.
         """
         csv_path = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
@@ -28,18 +29,50 @@ class DhanStore:
                 f"Dhan instruments not found at {csv_path}. Run dhan_refresher first."
             )
 
-        cls._df = pd.read_csv(csv_path, low_memory=False)
-
-        # Core indexes
-        cls._by_symbol = {
-            str(row["SEM_SM_SYMBOL"]).strip().upper(): row
-            for _, row in cls._df.iterrows()
+        # Load only necessary columns to save memory
+        required_cols = [
+            'SEM_SM_SYMBOL', 'SEM_SM_SECURITY_ID', 'SEM_EXCH_ID',
+            'SEM_SEGMENT_ID', 'SEM_SM_LOT_SIZE', 'SEM_SM_ISIN'
+        ]
+        
+        # Optimize data types for memory
+        dtype_dict = {
+            'SEM_SM_SYMBOL': 'string',
+            'SEM_SM_SECURITY_ID': 'string',
+            'SEM_EXCH_ID': 'string',
+            'SEM_SEGMENT_ID': 'string',
+            'SEM_SM_LOT_SIZE': 'int32',
+            'SEM_SM_ISIN': 'string'
         }
+        
+        try:
+            cls._df = pd.read_csv(
+                csv_path,
+                usecols=required_cols,
+                dtype=dtype_dict,
+                low_memory=True,
+                engine='c'  # Use C engine for faster parsing
+            )
+        except ValueError:
+            # If usecols fails, load all columns but with optimization
+            cls._df = pd.read_csv(
+                csv_path,
+                low_memory=True,
+                engine='c'
+            )
 
-        cls._by_security_id = {
-            str(row["SEM_SM_SECURITY_ID"]).strip(): row
-            for _, row in cls._df.iterrows()
-        }
+        # Core indexes - use minimal memory
+        cls._by_symbol = {}
+        cls._by_security_id = {}
+        
+        for _, row in cls._df.iterrows():
+            symbol = str(row.get("SEM_SM_SYMBOL", "")).strip().upper()
+            sec_id = str(row.get("SEM_SM_SECURITY_ID", "")).strip()
+            
+            if symbol:
+                cls._by_symbol[symbol] = row
+            if sec_id:
+                cls._by_security_id[sec_id] = row
 
         return cls
 
