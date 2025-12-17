@@ -1,0 +1,5 @@
+# Use DhanOrderType to select flow: SUPER or FOREVER
+DhanOrderType,Symbol,Exchange,TransactionType,Quantity,OrderType,ProductType,Price,TargetPrice,StopLoss,TrailingStopLoss,TriggerPrice,OrderFlag,Validity,DisclosedQuantity,Price1,TriggerPrice1,Quantity1,Tag
+SUPER,SBIN,NSE,BUY,10,LIMIT,INTRADAY,610,650,590,0,,,,,,,
+FOREVER,SBIN,NSE,BUY,5,LIMIT,CNC,1428,,, ,1427,SINGLE,DAY,1,,,,my_strategy
+FOREVER,RELIANCE,NSE,BUY,5,LIMIT,CNC,2428,,, ,2427,OCO,DAY,1,2420,2419,10,my_strategy_oco

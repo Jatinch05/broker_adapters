@@ -1,3 +1,15 @@
+## Sample Sheets
+
+- `sample_orders.xlsx`: includes Super Orders. Add Forever Orders by including columns: `TriggerPrice`, `OrderFlag` (SINGLE/OCO), `Validity` (DAY/IOC), `DisclosedQuantity`, optional `Price1`, `TriggerPrice1`, `Quantity1`. When `TriggerPrice` is present, the row is treated as a Forever Order.
+
+Alternatively, use `examples/forever_orders.csv` (added) for a minimal Forever sample.
+
+### Unified Bulk Sheet (preferred)
+- Add a column `DhanOrderType` with values `SUPER` or `FOREVER` to explicitly select the flow per row.
+- See `examples/combined_orders.csv` for a single sheet containing both flows.
+- Required columns per flow:
+    - SUPER: `Symbol,Exchange,TransactionType,Quantity,OrderType,ProductType,TargetPrice,StopLoss` (+ optional `Price,TrailingStopLoss,Tag,StrikePrice,ExpiryDate,OptionType`)
+    - FOREVER: `Symbol,Exchange,TransactionType,Quantity,OrderType,ProductType,Price,TriggerPrice` (+ optional `OrderFlag,Validity,DisclosedQuantity,Price1,TriggerPrice1,Quantity1,Tag,StrikePrice,ExpiryDate,OptionType`)
 # Dhan Super Order - Broker Adapter
 
 A Python framework for placing **Dhan Super Orders** with comprehensive validation and error handling.

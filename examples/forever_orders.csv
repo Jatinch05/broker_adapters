@@ -1,0 +1,3 @@
+Symbol,Exchange,TransactionType,Quantity,OrderType,ProductType,Price,TriggerPrice,OrderFlag,Validity,DisclosedQuantity,Price1,TriggerPrice1,Quantity1,Tag
+SBIN,NSE,BUY,5,LIMIT,CNC,1428,1427,SINGLE,DAY,1,,,,my_strategy
+RELIANCE,NSE,BUY,5,LIMIT,CNC,1428,1427,OCO,DAY,1,1420,1419,10,my_strategy_oco

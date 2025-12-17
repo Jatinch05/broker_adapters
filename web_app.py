@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 import logging
 import time
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
+from orchestrator.forever import DhanForeverOrderOrchestrator, DhanForeverOrderError
 from validator.instruments.dhan_store import DhanStore
 from validator.instruments.dhan_refresher import refresh_dhan_instruments
 from apis.dhan.auth import authenticate, DhanAuthError
@@ -54,6 +55,7 @@ MAX_ORDER_HISTORY = 1000
 DHAN_RATE_LIMIT = 25  # orders per second
 RATE_LIMIT_WINDOW = 1.0  # 1 second window
 rate_limit_timestamps = []
+
 
 
 def rate_limit_wait():
@@ -155,6 +157,7 @@ def place_order():
     """Order placement form and handler"""
     if request.method == 'POST':
         try:
+            order_flow = request.form.get('order_flow', 'SUPER').strip().upper()
             # Get form data
             order_data = {
                 'symbol': request.form.get('symbol', '').strip().upper(),
@@ -164,13 +167,10 @@ def place_order():
                 'order_type': request.form.get('order_type', '').strip().upper(),
                 'price': float(request.form.get('price', 0)) if request.form.get('price') else None,
                 'product': request.form.get('product', '').strip().upper(),
-                'target_price': float(request.form.get('target_price', 0)),
-                'stop_loss_price': float(request.form.get('stop_loss_price', 0)),
-                'trailing_jump': float(request.form.get('trailing_jump', 0)),
-                'order_category': 'SUPER',
+                'order_category': order_flow,
             }
             
-            # Add optional advanced lookup fields (for SENSEX/BSXOPT)
+            # Add optional advanced lookup fields (for derivatives)
             strike_price = request.form.get('strike_price', '').strip()
             if strike_price:
                 order_data['strike_price'] = float(strike_price)
@@ -188,14 +188,35 @@ def place_order():
             if tag:
                 order_data['tag'] = tag
             
-            # Create orchestrator
-            orchestrator = DhanSuperOrderOrchestrator(
-                client_id=session['client_id'],
-                access_token=session['access_token']
-            )
-            
-            # Place order
-            result = orchestrator.place_super_order(order_data)
+            if order_flow == 'FOREVER':
+                # Forever specific fields
+                order_data['trigger_price'] = float(request.form.get('trigger_price', 0) or 0)
+                order_data['order_flag'] = request.form.get('order_flag', 'SINGLE').strip().upper() or 'SINGLE'
+                order_data['validity'] = request.form.get('validity', 'DAY').strip().upper() or 'DAY'
+                dq = request.form.get('disclosed_quantity', '')
+                order_data['disclosed_quantity'] = int(dq) if dq != '' else 0
+                # OCO legs
+                if order_data['order_flag'] == 'OCO':
+                    if request.form.get('price1'): order_data['price1'] = float(request.form.get('price1'))
+                    if request.form.get('trigger_price1'): order_data['trigger_price1'] = float(request.form.get('trigger_price1'))
+                    if request.form.get('quantity1'): order_data['quantity1'] = int(request.form.get('quantity1'))
+
+                rate_limit_wait()
+                orch_f = DhanForeverOrderOrchestrator(client_id=session['client_id'], access_token=session['access_token'])
+                result = orch_f.place_forever_order(order_data)
+            else:
+                # Super-specific fields
+                order_data['target_price'] = float(request.form.get('target_price', 0))
+                order_data['stop_loss_price'] = float(request.form.get('stop_loss_price', 0))
+                order_data['trailing_jump'] = float(request.form.get('trailing_jump', 0))
+                order_data['order_category'] = 'SUPER'
+
+                orchestrator = DhanSuperOrderOrchestrator(
+                    client_id=session['client_id'],
+                    access_token=session['access_token']
+                )
+                rate_limit_wait()
+                result = orchestrator.place_super_order(order_data)
             
             # Store in history
             order_record = {
@@ -221,7 +242,7 @@ def place_order():
         except ValueError as e:
             logger.error(f'Validation error in place_order: {str(e)}')
             flash(f'Invalid input: {str(e)}', 'error')
-        except DhanSuperOrderError as e:
+        except (DhanSuperOrderError, DhanForeverOrderError) as e:
             logger.error(f'Order placement error: {str(e)}')
             flash(f'Order failed: {str(e)}', 'error')
         except Exception as e:
@@ -229,6 +250,8 @@ def place_order():
             flash(f'Unexpected error: {str(e)}', 'error')
     
     return render_template('place_order.html')
+
+
 
 
 @app.route('/order-history')
@@ -324,9 +347,13 @@ def bulk_upload():
                 flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
                 return render_template('bulk_upload.html')
             
-            # Process each row
+            # Process each row (supports SUPER and FOREVER in a single sheet)
             results = []
-            orchestrator = DhanSuperOrderOrchestrator(
+            orch_super = DhanSuperOrderOrchestrator(
+                client_id=session['client_id'],
+                access_token=session['access_token']
+            )
+            orch_forever = DhanForeverOrderOrchestrator(
                 client_id=session['client_id'],
                 access_token=session['access_token']
             )
@@ -349,63 +376,97 @@ def bulk_upload():
                         results.append(result)
                         continue
                     
-                    # Build order data with correct parameter names for orchestrator
-                    order_data = {
+                    # Decide flow: SUPER or FOREVER
+                    # Prefer explicit columns: DhanOrderType or OrderCategory; fallback to presence of TriggerPrice
+                    order_flow = 'SUPER'
+                    if 'DhanOrderType' in df.columns and not pd.isna(row.get('DhanOrderType')):
+                        order_flow = str(row.get('DhanOrderType')).strip().upper()
+                    elif 'OrderCategory' in df.columns and not pd.isna(row.get('OrderCategory')):
+                        order_flow = str(row.get('OrderCategory')).strip().upper()
+                    is_forever = order_flow == 'FOREVER' or ('TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')))
+
+                    base_common = {
                         'symbol': str(row['Symbol']).strip().upper(),
                         'exchange': str(row['Exchange']).strip().upper(),
                         'txn_type': str(row['TransactionType']).strip().upper(),
                         'qty': int(row['Quantity']),
                         'order_type': str(row['OrderType']).strip().upper(),
                         'product': str(row['ProductType']).strip().upper(),
-                        'order_category': 'SUPER',
                         'price': None,
-                        'target_price': 0,
-                        'stop_loss_price': 0,
-                        'trailing_jump': 0
                     }
+                    if 'Price' in df.columns and not pd.isna(row.get('Price')) and row.get('Price') != '':
+                        base_common['price'] = float(row['Price'])
                     
-                    # Add optional advanced lookup fields (for SENSEX/BSXOPT-like symbols)
+                    # Add optional advanced lookup fields (for derivatives)
                     if 'StrikePrice' in row and not pd.isna(row['StrikePrice']) and row['StrikePrice'] != '':
-                        order_data['strike_price'] = float(row['StrikePrice'])
+                        base_common['strike_price'] = float(row['StrikePrice'])
                     
                     if 'ExpiryDate' in row and not pd.isna(row['ExpiryDate']) and row['ExpiryDate'] != '':
-                        order_data['expiry_date'] = str(row['ExpiryDate']).strip()
+                        base_common['expiry_date'] = str(row['ExpiryDate']).strip()
                     
                     if 'OptionType' in row and not pd.isna(row['OptionType']) and row['OptionType'] != '':
-                        order_data['option_type'] = str(row['OptionType']).strip().upper()
+                        base_common['option_type'] = str(row['OptionType']).strip().upper()
                     
-                    # Add optional fields if present and not NaN
-                    if 'Price' in row and not pd.isna(row['Price']) and row['Price'] != '':
-                        order_data['price'] = float(row['Price'])
-                    
-                    if 'TargetPrice' in row and not pd.isna(row['TargetPrice']) and row['TargetPrice'] != '':
-                        order_data['target_price'] = float(row['TargetPrice'])
+                    if is_forever:
+                        order_data = dict(base_common)
+                        order_data['order_category'] = 'FOREVER'
+                        # Forever required
+                        if 'TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')) and row.get('TriggerPrice') != '':
+                            order_data['trigger_price'] = float(row['TriggerPrice'])
+                        else:
+                            result['status'] = 'Failed'
+                            result['message'] = 'TriggerPrice is required for Forever Orders'
+                            results.append(result)
+                            continue
+                        # Optional OCO
+                        if 'OrderFlag' in df.columns and not pd.isna(row.get('OrderFlag')):
+                            order_data['order_flag'] = str(row['OrderFlag']).strip().upper()
+                        else:
+                            order_data['order_flag'] = 'SINGLE'
+                        if order_data['order_flag'] == 'OCO':
+                            if 'Price1' in df.columns and not pd.isna(row.get('Price1')): order_data['price1'] = float(row['Price1'])
+                            if 'TriggerPrice1' in df.columns and not pd.isna(row.get('TriggerPrice1')): order_data['trigger_price1'] = float(row['TriggerPrice1'])
+                            if 'Quantity1' in df.columns and not pd.isna(row.get('Quantity1')): order_data['quantity1'] = int(row['Quantity1'])
+                        # Validity and disclosed qty
+                        if 'Validity' in df.columns and not pd.isna(row.get('Validity')):
+                            order_data['validity'] = str(row['Validity']).strip().upper()
+                        else:
+                            order_data['validity'] = 'DAY'
+                        if 'DisclosedQuantity' in df.columns and not pd.isna(row.get('DisclosedQuantity')):
+                            order_data['disclosed_quantity'] = int(row['DisclosedQuantity'])
+                        # Tag
+                        if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
+                            order_data['tag'] = str(row['Tag']).strip()
                     else:
-                        result['status'] = 'Failed'
-                        result['message'] = 'TargetPrice is required for Super Orders'
-                        results.append(result)
-                        continue
-                    
-                    if 'StopLoss' in row and not pd.isna(row['StopLoss']) and row['StopLoss'] != '':
-                        order_data['stop_loss_price'] = float(row['StopLoss'])
-                    else:
-                        result['status'] = 'Failed'
-                        result['message'] = 'StopLoss is required for Super Orders'
-                        results.append(result)
-                        continue
-                    
-                    if 'TrailingStopLoss' in row and not pd.isna(row['TrailingStopLoss']) and row['TrailingStopLoss'] != '':
-                        order_data['trailing_jump'] = float(row['TrailingStopLoss'])
-                    
-                    if 'Tag' in row and not pd.isna(row['Tag']) and row['Tag'] != '':
-                        order_data['tag'] = str(row['Tag']).strip()
+                        order_data = dict(base_common)
+                        order_data['order_category'] = 'SUPER'
+                        # Super required
+                        if 'TargetPrice' in df.columns and not pd.isna(row.get('TargetPrice')) and row.get('TargetPrice') != '':
+                            order_data['target_price'] = float(row['TargetPrice'])
+                        else:
+                            result['status'] = 'Failed'
+                            result['message'] = 'TargetPrice is required for Super Orders'
+                            results.append(result)
+                            continue
+                        if 'StopLoss' in df.columns and not pd.isna(row.get('StopLoss')) and row.get('StopLoss') != '':
+                            order_data['stop_loss_price'] = float(row['StopLoss'])
+                        else:
+                            result['status'] = 'Failed'
+                            result['message'] = 'StopLoss is required for Super Orders'
+                            results.append(result)
+                            continue
+                        if 'TrailingStopLoss' in df.columns and not pd.isna(row.get('TrailingStopLoss')) and row.get('TrailingStopLoss') != '':
+                            order_data['trailing_jump'] = float(row['TrailingStopLoss'])
+                        if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
+                            order_data['tag'] = str(row['Tag']).strip()
                     
                     # Rate limit to respect Dhan's 25 orders/sec
-                    logger.info(f"Placing order row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']} type={order_data['order_type']}")
+                    logger.info(f"Placing {order_data['order_category']} row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']} type={order_data['order_type']}")
                     rate_limit_wait()
-
-                    # Place the order - pass order_data dict directly, not unpacked
-                    response = orchestrator.place_super_order(order_data)
+                    if is_forever:
+                        response = orch_forever.place_forever_order(order_data)
+                    else:
+                        response = orch_super.place_super_order(order_data)
                     
                     # Store in history
                     order_record = {
@@ -464,6 +525,10 @@ def bulk_upload():
     
     # GET request - show the upload form
     return render_template('bulk_upload.html')
+
+
+
+
 
 
 if __name__ == '__main__':

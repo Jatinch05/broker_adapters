@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="card">
-    <div class="card-header">Place Super Order</div>
+    <div class="card-header">Place Order (Super or Forever)</div>
     
     <form method="POST" action="{{ url_for('place_order') }}" id="orderForm">
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
@@ -90,7 +90,47 @@
                 </select>
             </div>
 
-            <!-- Target & Stop Loss -->
+            <!-- Optional Derivative Fields -->
+            <div class="form-group">
+                <label for="strike_price">Strike Price (Optional)</label>
+                <input 
+                    type="number" 
+                    id="strike_price" 
+                    name="strike_price" 
+                    placeholder="e.g., 24000" 
+                    step="0.01">
+                <div class="hint">For options on indices (e.g., NIFTY, BSXOPT)</div>
+            </div>
+
+            <div class="form-group">
+                <label for="expiry_date">Expiry Date (Optional)</label>
+                <input 
+                    type="date" 
+                    id="expiry_date" 
+                    name="expiry_date">
+                <div class="hint">Contract expiry date (YYYY-MM-DD)</div>
+            </div>
+
+            <div class="form-group">
+                <label for="option_type">Option Type (Optional)</label>
+                <select id="option_type" name="option_type">
+                    <option value="">Select Option Type</option>
+                    <option value="CE">CE - Call Option</option>
+                    <option value="PE">PE - Put Option</option>
+                </select>
+                <div class="hint">Choose CE or PE for options</div>
+            </div>
+
+            <!-- Flow Selection -->
+            <div class="form-group">
+                <label for="order_flow">Order Flow *</label>
+                <select id="order_flow" name="order_flow" required onchange="toggleFlow()">
+                    <option value="SUPER">SUPER (Target + Stop Loss)</option>
+                    <option value="FOREVER">FOREVER (Trigger / SINGLE or OCO)</option>
+                </select>
+            </div>
+
+            <!-- Target & Stop Loss (SUPER) -->
             <div class="form-group">
                 <label for="target_price">Target Price *</label>
                 <input 
@@ -115,7 +155,7 @@
                 <div class="hint">Exit if price reaches this level</div>
             </div>
 
-            <!-- Trailing & Tag -->
+            <!-- Trailing & Tag (SUPER) -->
             <div class="form-group">
                 <label for="trailing_jump">Trailing Jump</label>
                 <input 
@@ -126,6 +166,49 @@
                     step="0.01"
                     value="0">
                 <div class="hint">Trail stop loss by this amount (0 = no trailing)</div>
+            </div>
+
+            <!-- Forever fields -->
+            <div class="form-group" id="foreverTrigger">
+                <label for="trigger_price">Trigger Price *</label>
+                <input type="number" id="trigger_price" name="trigger_price" step="0.01" placeholder="e.g., 1427">
+                <div class="hint">Price at which order is triggered</div>
+            </div>
+
+            <div class="form-group" id="foreverFlag">
+                <label for="order_flag">Order Flag *</label>
+                <select id="order_flag" name="order_flag">
+                    <option value="SINGLE">SINGLE</option>
+                    <option value="OCO">OCO</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="foreverValidity">
+                <label for="validity">Validity *</label>
+                <select id="validity" name="validity">
+                    <option value="DAY">DAY</option>
+                    <option value="IOC">IOC</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="foreverDQ">
+                <label for="disclosed_quantity">Disclosed Quantity</label>
+                <input type="number" id="disclosed_quantity" name="disclosed_quantity" min="0" placeholder="e.g., 1">
+                <div class="hint">Visible shares; must be < quantity</div>
+            </div>
+
+            <!-- OCO secondary leg -->
+            <div class="form-group" id="foreverPrice1">
+                <label for="price1">Secondary Price (OCO)</label>
+                <input type="number" id="price1" name="price1" step="0.01" placeholder="e.g., 1420">
+            </div>
+            <div class="form-group" id="foreverTrigger1">
+                <label for="trigger_price1">Secondary Trigger (OCO)</label>
+                <input type="number" id="trigger_price1" name="trigger_price1" step="0.01" placeholder="e.g., 1419">
+            </div>
+            <div class="form-group" id="foreverQty1">
+                <label for="quantity1">Secondary Quantity (OCO)</label>
+                <input type="number" id="quantity1" name="quantity1" min="0" placeholder="e.g., 10">
             </div>
 
             <div class="form-group">
@@ -148,9 +231,7 @@
 
         <!-- Submit Buttons -->
         <div style="margin-top: 30px; display: flex; gap: 15px; flex-wrap: wrap;">
-            <button type="submit" class="btn btn-primary">
-                🚀 Place Super Order
-            </button>
+            <button type="submit" class="btn btn-primary">🚀 Place Order</button>
             <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
                 Cancel
             </a>
@@ -165,7 +246,7 @@
     <div style="display: grid; gap: 10px; font-size: 14px;">
         <div><strong>For BUY orders:</strong> stop_loss_price &lt; entry_price &lt; target_price</div>
         <div><strong>For SELL orders:</strong> target_price &lt; entry_price &lt; stop_loss_price</div>
-        <div><strong>MARKET orders:</strong> Leave entry price empty</div>
+        <div><strong>MARKET orders (Forever):</strong> Price is required per API</div>
         <div><strong>LIMIT orders:</strong> Specify exact entry price</div>
     </div>
 </div>
@@ -179,10 +260,10 @@ function togglePrice() {
     const priceInput = document.getElementById('price');
     
     if (orderType === 'MARKET') {
-        priceInput.value = '';
-        priceInput.removeAttribute('required');
-        priceInput.disabled = true;
-        priceGroup.style.opacity = '0.5';
+        // For Forever, price is required; for Super, we can allow empty.
+        priceInput.disabled = false;
+        priceInput.setAttribute('required', 'required');
+        priceGroup.style.opacity = '1';
     } else if (orderType === 'LIMIT') {
         priceInput.disabled = false;
         priceInput.setAttribute('required', 'required');
@@ -249,5 +330,27 @@ document.getElementById('txn_type').addEventListener('change', updatePriceHints)
 
 // Initialize
 togglePrice();
+
+function toggleFlow() {
+    const flow = document.getElementById('order_flow').value;
+    const superIds = ['target_price','stop_loss_price','trailing_jump'];
+    const foreverIds = ['trigger_price','order_flag','validity','disclosed_quantity','price1','trigger_price1','quantity1'];
+    const superVisible = (flow === 'SUPER');
+    superIds.forEach(id => {
+        const el = document.getElementById(id);
+        const group = el.closest('.form-group');
+        group.style.display = superVisible ? 'block' : 'none';
+        el.required = superVisible && (id !== 'trailing_jump');
+    });
+    foreverIds.forEach(id => {
+        const el = document.getElementById(id);
+        const group = el.closest('.form-group');
+        group.style.display = (!superVisible) ? 'block' : 'none';
+        // Trigger price required for forever; others conditional
+        el.required = (!superVisible && id === 'trigger_price');
+    });
+}
+
+toggleFlow();
 </script>
 {% endblock %}

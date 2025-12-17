@@ -11,32 +11,30 @@
     <div class="card" style="margin-bottom: 30px;">
         <h2>📝 Instructions</h2>
         <ol style="line-height: 1.8;">
-            <li><strong>Download Template:</strong> <a href="/static/sample_orders.xlsx" download style="color: #667eea;">sample_orders.xlsx</a></li>
+            <li><strong>Download Template:</strong> <a href="/static/sample_orders.xlsx" download style="color: #667eea;">sample_orders.xlsx</a> (Excel)</li>
+            <li><strong>Alternative Combined Sample:</strong> <a href="/static/combined_orders.csv" download style="color: #667eea;">combined_orders.csv</a> (CSV with SUPER + FOREVER examples)</li>
             <li><strong>Fill in your orders</strong> following the format</li>
             <li><strong>Upload the file</strong> using the form below</li>
             <li><strong>Review results</strong> and check order history</li>
         </ol>
         
-        <h3 style="margin-top: 20px;">📋 Required Columns:</h3>
+        <h3 style="margin-top: 20px;">📋 Required Columns (Unified Super/Forever):</h3>
         <ul style="line-height: 1.8;">
             <li><code>Symbol</code> - Trading symbol (e.g., HDFCBANK, RELIANCE)</li>
-            <li><code>Exchange</code> - NSE, BSE, MCX, etc.</li>
+            <li><code>Exchange</code> - NSE or BSE</li>
             <li><code>TransactionType</code> - BUY or SELL</li>
             <li><code>Quantity</code> - Number of shares/lots</li>
             <li><code>OrderType</code> - LIMIT or MARKET</li>
-            <li><code>ProductType</code> - CNC, INTRADAY, MARGIN, MTF, CO, BO</li>
+            <li><code>ProductType</code> - SUPER: CNC/INTRADAY/MARGIN/MTF, FOREVER: CNC/MTF</li>
+            <li><code>DhanOrderType</code> - SUPER or FOREVER (preferred; if omitted, we auto-detect FOREVER when <code>TriggerPrice</code> is present)</li>
         </ul>
         
-        <h3 style="margin-top: 20px;">📋 Optional Columns:</h3>
+        <h3 style="margin-top: 20px;">📋 Optional/Flow-Specific Columns:</h3>
         <ul style="line-height: 1.8;">
-            <li><code>Price</code> - Order price (required for LIMIT orders)</li>
-            <li><code>TargetPrice</code> - Target price for profit booking</li>
-            <li><code>StopLoss</code> - Stop loss price</li>
-            <li><code>TrailingStopLoss</code> - Trailing SL points</li>
-            <li><code>Tag</code> - Custom tag for tracking</li>
-            <li><code>StrikePrice</code> - Strike price (for SENSEX/BSXOPT options)</li>
-            <li><code>ExpiryDate</code> - Expiry date in YYYY-MM-DD (for SENSEX/BSXOPT options)</li>
-            <li><code>OptionType</code> - CE or PE (for SENSEX/BSXOPT options)</li>
+            <li><strong>SUPER</strong>: <code>TargetPrice</code>, <code>StopLoss</code>, <code>TrailingStopLoss</code>, optional <code>Price</code>, <code>Tag</code></li>
+            <li><strong>FOREVER</strong>: <code>TriggerPrice</code> (required), <code>Price</code> (required even for MARKET), <code>OrderFlag</code> (SINGLE/OCO), <code>Validity</code> (DAY/IOC), <code>DisclosedQuantity</code></li>
+            <li><strong>FOREVER (OCO)</strong>: <code>Price1</code>, <code>TriggerPrice1</code>, <code>Quantity1</code></li>
+            <li><strong>Optional (Derivatives)</strong>: <code>StrikePrice</code>, <code>ExpiryDate</code>, <code>OptionType</code></li>
         </ul>
         
         <div style="margin-top: 15px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
