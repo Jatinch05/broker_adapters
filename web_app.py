@@ -637,18 +637,6 @@ def bulk_cancel(job_id):
     return redirect(url_for('bulk_status', job_id=job_id))
 
 
-@app.route('/bulk-cancel', methods=['POST'])
-@login_required
-def bulk_cancel():
-    """Cancel an in-progress bulk upload"""
-    global bulk_cancel_event, bulk_in_progress
-    bulk_cancel_event.set()
-    flash('Bulk upload cancellation requested. Pending orders will stop shortly.', 'info')
-    return redirect(url_for('bulk_upload'))
-
-
-
-
 
 
 if __name__ == '__main__':
