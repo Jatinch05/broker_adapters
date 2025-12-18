@@ -560,22 +560,18 @@ def bulk_upload():
             
             if missing_columns:
                 flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
-                with bulk_lock:
-                    bulk_in_progress = False
-                flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
                 return render_template('bulk_upload.html', bulk_in_progress=False)
 
             # Start background job
             job_id = create_bulk_job(df, session['client_id'], session['access_token'])
             flash(f'Started bulk upload. Job ID: {job_id}', 'info')
             return redirect(url_for('bulk_status', job_id=job_id))
+        except Exception as e:
+            import traceback
             error_details = traceback.format_exc()
             logger.error(f'ERROR in bulk upload: {error_details}')
             flash(f'Error processing file: {str(e)}', 'error')
             return redirect(request.url)
-        finally:
-            with bulk_lock:
-                bulk_in_progress = False
     
     # GET request - show the upload form
     return render_template('bulk_upload.html', bulk_in_progress=False)
