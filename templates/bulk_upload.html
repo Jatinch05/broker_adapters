@@ -49,6 +49,11 @@
     <!-- Upload Form -->
     <div class="card" style="margin-bottom: 30px;">
         <h2>📤 Upload Orders File</h2>
+        {% if bulk_in_progress and job %}
+        <div style="margin-bottom: 10px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+            Bulk job {{ job.id }} is {{ job.status }}. You can cancel it below.
+        </div>
+        {% endif %}
         <form method="POST" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="file">Select File (.xlsx, .xls, .csv)</label>
@@ -59,7 +64,31 @@
                 🚀 Upload and Place Orders
             </button>
         </form>
+        {% if bulk_in_progress and job %}
+        <form method="POST" action="{{ url_for('bulk_cancel', job_id=job.id) }}" style="margin-top: 12px;">
+            <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 12px;">
+                🛑 Cancel Running Bulk
+            </button>
+        </form>
+        {% endif %}
     </div>
+
+    {% if job %}
+    <div class="card" style="margin-bottom: 30px;">
+        <h2>📡 Bulk Job Status</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
+            <div class="stat-chip">Job ID: {{ job.id }}</div>
+            <div class="stat-chip">Status: {{ job.status }}</div>
+            <div class="stat-chip">Message: {{ job.message }}</div>
+            <div class="stat-chip">Total: {{ job.total }}</div>
+            <div class="stat-chip">Success: {{ success_count or 0 }}</div>
+            <div class="stat-chip">Failed: {{ failed_count or 0 }}</div>
+        </div>
+        {% if bulk_in_progress %}
+        <div style="margin-top: 6px; color: #6b7280;">Auto-refreshing every 2s…</div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <!-- Results Section -->
     {% if results %}
@@ -182,6 +211,14 @@
         box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
     }
 
+    .stat-chip {
+        padding: 10px;
+        background: #f3f4f6;
+        border-radius: 8px;
+        font-size: 0.95em;
+        color: #374151;
+    }
+
     @media (max-width: 768px) {
         h1 {
             font-size: 2em;
@@ -196,4 +233,35 @@
         }
     }
 </style>
+{% if bulk_in_progress and job %}
+<script>
+const jobId = "{{ job.id }}";
+const statusUrl = `/bulk-status/${jobId}/json`;
+const terminal = new Set(['completed', 'failed', 'cancelled']);
+async function pollJob(){
+    try {
+        const res = await fetch(statusUrl);
+        if(!res.ok) return;
+        const data = await res.json();
+        if(data.status){
+            const statusEl = document.querySelector('.stat-chip:nth-child(2)');
+            if(statusEl) statusEl.textContent = `Status: ${data.status}`;
+            const msgEl = document.querySelector('.stat-chip:nth-child(3)');
+            if(msgEl) msgEl.textContent = `Message: ${data.message || ''}`;
+            const succEl = document.querySelector('.stat-chip:nth-child(5)');
+            if(succEl) succEl.textContent = `Success: ${data.success_count || 0}`;
+            const failEl = document.querySelector('.stat-chip:nth-child(6)');
+            if(failEl) failEl.textContent = `Failed: ${data.failed_count || 0}`;
+            if(terminal.has(data.status)){
+                clearInterval(pollHandle);
+                window.location.reload();
+            }
+        }
+    } catch(e){
+        console.warn('Polling error', e);
+    }
+}
+const pollHandle = setInterval(pollJob, 2000);
+</script>
+{% endif %}
 {% endblock %}

@@ -12,6 +12,8 @@ import pandas as pd
 from werkzeug.utils import secure_filename
 import logging
 import time
+import threading
+import uuid
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
 from orchestrator.forever import DhanForeverOrderOrchestrator, DhanForeverOrderError
 from validator.instruments.dhan_store import DhanStore
@@ -56,6 +58,10 @@ DHAN_RATE_LIMIT = 25  # orders per second
 RATE_LIMIT_WINDOW = 1.0  # 1 second window
 rate_limit_timestamps = []
 
+# Bulk processing jobs (background threads)
+bulk_jobs = {}
+bulk_jobs_lock = threading.Lock()
+
 
 
 def rate_limit_wait():
@@ -83,6 +89,215 @@ def rate_limit_wait():
 def allowed_file(filename):
     """Check if the uploaded file has an allowed extension"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def create_bulk_job(df: pd.DataFrame, client_id: str, access_token: str) -> str:
+    """Create and start a background bulk job"""
+    job_id = str(uuid.uuid4())
+    cancel_event = threading.Event()
+    job = {
+        'id': job_id,
+        'status': 'pending',
+        'message': 'Queued',
+        'results': [],
+        'success_count': 0,
+        'failed_count': 0,
+        'total': len(df),
+        'started_at': None,
+        'finished_at': None,
+        'error': None,
+        'cancel_event': cancel_event,
+    }
+    with bulk_jobs_lock:
+        bulk_jobs[job_id] = job
+    thread = threading.Thread(
+        target=_run_bulk_job,
+        args=(job_id, df.copy(), client_id, access_token, cancel_event),
+        daemon=True,
+    )
+    thread.start()
+    return job_id
+
+
+def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: str, cancel_event: threading.Event):
+    """Background worker to process bulk orders without blocking the request thread"""
+    with bulk_jobs_lock:
+        job = bulk_jobs.get(job_id)
+    if job is None:
+        return
+    try:
+        job['status'] = 'running'
+        job['message'] = 'Processing'
+        job['started_at'] = datetime.now().isoformat()
+
+        # Warm instruments once to avoid repeated loads during the run
+        try:
+            DhanStore.load()
+        except Exception as e:  # pragma: no cover
+            logger.warning(f"Bulk job {job_id}: instrument load warning: {e}")
+
+        orch_super = DhanSuperOrderOrchestrator(client_id=client_id, access_token=access_token)
+        orch_forever = DhanForeverOrderOrchestrator(client_id=client_id, access_token=access_token)
+
+        for index, row in df.iterrows():
+            if cancel_event.is_set():
+                job['status'] = 'cancelled'
+                job['message'] = 'Cancelled by user'
+                break
+
+            row_num = index + 2  # Excel row number (1-indexed + header)
+            result = {
+                'row': row_num,
+                'symbol': row.get('Symbol', 'N/A'),
+                'status': 'Processing',
+                'message': '',
+                'order_id': None
+            }
+            try:
+                # Validate required fields
+                if pd.isna(row.get('Symbol')) or not str(row.get('Symbol')).strip():
+                    result['status'] = 'Failed'
+                    result['message'] = 'Symbol is required'
+                    job['results'].append(result)
+                    job['failed_count'] += 1
+                    continue
+
+                # Decide flow: SUPER or FOREVER
+                order_flow = 'SUPER'
+                if 'DhanOrderType' in df.columns and not pd.isna(row.get('DhanOrderType')):
+                    order_flow = str(row.get('DhanOrderType')).strip().upper()
+                elif 'OrderCategory' in df.columns and not pd.isna(row.get('OrderCategory')):
+                    order_flow = str(row.get('OrderCategory')).strip().upper()
+                is_forever = order_flow == 'FOREVER' or ('TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')))
+
+                base_common = {
+                    'symbol': str(row['Symbol']).strip().upper(),
+                    'exchange': str(row['Exchange']).strip().upper(),
+                    'txn_type': str(row['TransactionType']).strip().upper(),
+                    'qty': int(row['Quantity']),
+                    'order_type': str(row['OrderType']).strip().upper(),
+                    'product': str(row['ProductType']).strip().upper(),
+                    'price': None,
+                }
+                if 'Price' in df.columns and not pd.isna(row.get('Price')) and row.get('Price') != '':
+                    base_common['price'] = float(row['Price'])
+
+                # Optional derivative lookup fields
+                if 'StrikePrice' in row and not pd.isna(row['StrikePrice']) and row['StrikePrice'] != '':
+                    base_common['strike_price'] = float(row['StrikePrice'])
+                if 'ExpiryDate' in row and not pd.isna(row['ExpiryDate']) and row['ExpiryDate'] != '':
+                    base_common['expiry_date'] = str(row['ExpiryDate']).strip()
+                if 'OptionType' in row and not pd.isna(row['OptionType']) and row['OptionType'] != '':
+                    base_common['option_type'] = str(row['OptionType']).strip().upper()
+
+                if is_forever:
+                    order_data = dict(base_common)
+                    order_data['order_category'] = 'FOREVER'
+                    if 'TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')) and row.get('TriggerPrice') != '':
+                        order_data['trigger_price'] = float(row['TriggerPrice'])
+                    else:
+                        result['status'] = 'Failed'
+                        result['message'] = 'TriggerPrice is required for Forever Orders'
+                        job['results'].append(result)
+                        job['failed_count'] += 1
+                        continue
+                    if 'OrderFlag' in df.columns and not pd.isna(row.get('OrderFlag')):
+                        order_data['order_flag'] = str(row['OrderFlag']).strip().upper()
+                    else:
+                        order_data['order_flag'] = 'SINGLE'
+                    if order_data['order_flag'] == 'OCO':
+                        if 'Price1' in df.columns and not pd.isna(row.get('Price1')): order_data['price1'] = float(row['Price1'])
+                        if 'TriggerPrice1' in df.columns and not pd.isna(row.get('TriggerPrice1')): order_data['trigger_price1'] = float(row['TriggerPrice1'])
+                        if 'Quantity1' in df.columns and not pd.isna(row.get('Quantity1')): order_data['quantity1'] = int(row['Quantity1'])
+                    if 'Validity' in df.columns and not pd.isna(row.get('Validity')):
+                        order_data['validity'] = str(row['Validity']).strip().upper()
+                    else:
+                        order_data['validity'] = 'DAY'
+                    if 'DisclosedQuantity' in df.columns and not pd.isna(row.get('DisclosedQuantity')):
+                        order_data['disclosed_quantity'] = int(row['DisclosedQuantity'])
+                    if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
+                        order_data['tag'] = str(row['Tag']).strip()
+                else:
+                    order_data = dict(base_common)
+                    order_data['order_category'] = 'SUPER'
+                    if 'TargetPrice' in df.columns and not pd.isna(row.get('TargetPrice')) and row.get('TargetPrice') != '':
+                        order_data['target_price'] = float(row['TargetPrice'])
+                    else:
+                        result['status'] = 'Failed'
+                        result['message'] = 'TargetPrice is required for Super Orders'
+                        job['results'].append(result)
+                        job['failed_count'] += 1
+                        continue
+                    if 'StopLoss' in df.columns and not pd.isna(row.get('StopLoss')) and row.get('StopLoss') != '':
+                        order_data['stop_loss_price'] = float(row['StopLoss'])
+                    else:
+                        result['status'] = 'Failed'
+                        result['message'] = 'StopLoss is required for Super Orders'
+                        job['results'].append(result)
+                        job['failed_count'] += 1
+                        continue
+                    if 'TrailingStopLoss' in df.columns and not pd.isna(row.get('TrailingStopLoss')) and row.get('TrailingStopLoss') != '':
+                        order_data['trailing_jump'] = float(row['TrailingStopLoss'])
+                    if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
+                        order_data['tag'] = str(row['Tag']).strip()
+
+                logger.info(f"Bulk job {job_id}: Placing {order_data['order_category']} row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']}")
+                rate_limit_wait()
+                if is_forever:
+                    response = orch_forever.place_forever_order(order_data)
+                else:
+                    response = orch_super.place_super_order(order_data)
+
+                order_record = {
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'symbol': order_data['symbol'],
+                    'exchange': order_data['exchange'],
+                    'type': order_data['txn_type'],
+                    'quantity': order_data['qty'],
+                    'order_type': order_data['order_type'],
+                    'price': order_data.get('price', 'MARKET'),
+                    'product': order_data['product'],
+                    'target': order_data.get('target_price', 'N/A'),
+                    'stop_loss': order_data.get('stop_loss_price', 'N/A'),
+                    'trail_sl': order_data.get('trailing_jump', 'N/A'),
+                    'tag': order_data.get('tag', ''),
+                    'order_id': response.get('orderId', 'N/A'),
+                    'status': 'Success'
+                }
+                order_history.append(order_record)
+                if len(order_history) > MAX_ORDER_HISTORY:
+                    order_history.pop(0)
+
+                result['status'] = 'Success'
+                result['message'] = 'Order placed successfully'
+                result['order_id'] = response.get('orderId', 'N/A')
+                job['success_count'] += 1
+            except ValueError as e:
+                result['status'] = 'Failed'
+                result['message'] = f'Validation error: {str(e)}'
+                job['failed_count'] += 1
+            except (DhanSuperOrderError, DhanForeverOrderError) as e:
+                result['status'] = 'Failed'
+                result['message'] = f'Order error: {str(e)}'
+                job['failed_count'] += 1
+            except Exception as e:
+                result['status'] = 'Failed'
+                result['message'] = f'Error: {str(e)}'
+                job['failed_count'] += 1
+
+            job['results'].append(result)
+
+        if job['status'] != 'cancelled':
+            job['status'] = 'completed'
+            job['message'] = 'Completed'
+        job['finished_at'] = datetime.now().isoformat()
+
+    except Exception as e:  # pragma: no cover
+        job['status'] = 'failed'
+        job['message'] = 'Failed'
+        job['error'] = str(e)
+        job['finished_at'] = datetime.now().isoformat()
+
 
 
 def login_required(f):
@@ -345,186 +560,91 @@ def bulk_upload():
             
             if missing_columns:
                 flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
-                return render_template('bulk_upload.html')
-            
-            # Process each row (supports SUPER and FOREVER in a single sheet)
-            results = []
-            orch_super = DhanSuperOrderOrchestrator(
-                client_id=session['client_id'],
-                access_token=session['access_token']
-            )
-            orch_forever = DhanForeverOrderOrchestrator(
-                client_id=session['client_id'],
-                access_token=session['access_token']
-            )
-            
-            for index, row in df.iterrows():
-                row_num = index + 2  # Excel row number (1-indexed + header)
-                result = {
-                    'row': row_num,
-                    'symbol': row.get('Symbol', 'N/A'),
-                    'status': 'Processing',
-                    'message': '',
-                    'order_id': None
-                }
-                
-                try:
-                    # Validate required fields
-                    if pd.isna(row.get('Symbol')) or not str(row.get('Symbol')).strip():
-                        result['status'] = 'Failed'
-                        result['message'] = 'Symbol is required'
-                        results.append(result)
-                        continue
-                    
-                    # Decide flow: SUPER or FOREVER
-                    # Prefer explicit columns: DhanOrderType or OrderCategory; fallback to presence of TriggerPrice
-                    order_flow = 'SUPER'
-                    if 'DhanOrderType' in df.columns and not pd.isna(row.get('DhanOrderType')):
-                        order_flow = str(row.get('DhanOrderType')).strip().upper()
-                    elif 'OrderCategory' in df.columns and not pd.isna(row.get('OrderCategory')):
-                        order_flow = str(row.get('OrderCategory')).strip().upper()
-                    is_forever = order_flow == 'FOREVER' or ('TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')))
+                with bulk_lock:
+                    bulk_in_progress = False
+                flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
+                return render_template('bulk_upload.html', bulk_in_progress=False)
 
-                    base_common = {
-                        'symbol': str(row['Symbol']).strip().upper(),
-                        'exchange': str(row['Exchange']).strip().upper(),
-                        'txn_type': str(row['TransactionType']).strip().upper(),
-                        'qty': int(row['Quantity']),
-                        'order_type': str(row['OrderType']).strip().upper(),
-                        'product': str(row['ProductType']).strip().upper(),
-                        'price': None,
-                    }
-                    if 'Price' in df.columns and not pd.isna(row.get('Price')) and row.get('Price') != '':
-                        base_common['price'] = float(row['Price'])
-                    
-                    # Add optional advanced lookup fields (for derivatives)
-                    if 'StrikePrice' in row and not pd.isna(row['StrikePrice']) and row['StrikePrice'] != '':
-                        base_common['strike_price'] = float(row['StrikePrice'])
-                    
-                    if 'ExpiryDate' in row and not pd.isna(row['ExpiryDate']) and row['ExpiryDate'] != '':
-                        base_common['expiry_date'] = str(row['ExpiryDate']).strip()
-                    
-                    if 'OptionType' in row and not pd.isna(row['OptionType']) and row['OptionType'] != '':
-                        base_common['option_type'] = str(row['OptionType']).strip().upper()
-                    
-                    if is_forever:
-                        order_data = dict(base_common)
-                        order_data['order_category'] = 'FOREVER'
-                        # Forever required
-                        if 'TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')) and row.get('TriggerPrice') != '':
-                            order_data['trigger_price'] = float(row['TriggerPrice'])
-                        else:
-                            result['status'] = 'Failed'
-                            result['message'] = 'TriggerPrice is required for Forever Orders'
-                            results.append(result)
-                            continue
-                        # Optional OCO
-                        if 'OrderFlag' in df.columns and not pd.isna(row.get('OrderFlag')):
-                            order_data['order_flag'] = str(row['OrderFlag']).strip().upper()
-                        else:
-                            order_data['order_flag'] = 'SINGLE'
-                        if order_data['order_flag'] == 'OCO':
-                            if 'Price1' in df.columns and not pd.isna(row.get('Price1')): order_data['price1'] = float(row['Price1'])
-                            if 'TriggerPrice1' in df.columns and not pd.isna(row.get('TriggerPrice1')): order_data['trigger_price1'] = float(row['TriggerPrice1'])
-                            if 'Quantity1' in df.columns and not pd.isna(row.get('Quantity1')): order_data['quantity1'] = int(row['Quantity1'])
-                        # Validity and disclosed qty
-                        if 'Validity' in df.columns and not pd.isna(row.get('Validity')):
-                            order_data['validity'] = str(row['Validity']).strip().upper()
-                        else:
-                            order_data['validity'] = 'DAY'
-                        if 'DisclosedQuantity' in df.columns and not pd.isna(row.get('DisclosedQuantity')):
-                            order_data['disclosed_quantity'] = int(row['DisclosedQuantity'])
-                        # Tag
-                        if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
-                            order_data['tag'] = str(row['Tag']).strip()
-                    else:
-                        order_data = dict(base_common)
-                        order_data['order_category'] = 'SUPER'
-                        # Super required
-                        if 'TargetPrice' in df.columns and not pd.isna(row.get('TargetPrice')) and row.get('TargetPrice') != '':
-                            order_data['target_price'] = float(row['TargetPrice'])
-                        else:
-                            result['status'] = 'Failed'
-                            result['message'] = 'TargetPrice is required for Super Orders'
-                            results.append(result)
-                            continue
-                        if 'StopLoss' in df.columns and not pd.isna(row.get('StopLoss')) and row.get('StopLoss') != '':
-                            order_data['stop_loss_price'] = float(row['StopLoss'])
-                        else:
-                            result['status'] = 'Failed'
-                            result['message'] = 'StopLoss is required for Super Orders'
-                            results.append(result)
-                            continue
-                        if 'TrailingStopLoss' in df.columns and not pd.isna(row.get('TrailingStopLoss')) and row.get('TrailingStopLoss') != '':
-                            order_data['trailing_jump'] = float(row['TrailingStopLoss'])
-                        if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
-                            order_data['tag'] = str(row['Tag']).strip()
-                    
-                    # Rate limit to respect Dhan's 25 orders/sec
-                    logger.info(f"Placing {order_data['order_category']} row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']} type={order_data['order_type']}")
-                    rate_limit_wait()
-                    if is_forever:
-                        response = orch_forever.place_forever_order(order_data)
-                    else:
-                        response = orch_super.place_super_order(order_data)
-                    
-                    # Store in history
-                    order_record = {
-                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                        'symbol': order_data['symbol'],
-                        'exchange': order_data['exchange'],
-                        'type': order_data['txn_type'],
-                        'quantity': order_data['qty'],
-                        'order_type': order_data['order_type'],
-                        'price': order_data.get('price', 'MARKET'),
-                        'product': order_data['product'],
-                        'target': order_data.get('target_price', 'N/A'),
-                        'stop_loss': order_data.get('stop_loss_price', 'N/A'),
-                        'trail_sl': order_data.get('trailing_jump', 'N/A'),
-                        'tag': order_data.get('tag', ''),
-                        'order_id': response.get('orderId', 'N/A'),
-                        'status': 'Success'
-                    }
-                    order_history.append(order_record)
-                    # Keep only last MAX_ORDER_HISTORY orders
-                    if len(order_history) > MAX_ORDER_HISTORY:
-                        order_history.pop(0)
-                    
-                    result['status'] = 'Success'
-                    result['message'] = 'Order placed successfully'
-                    result['order_id'] = response.get('orderId', 'N/A')
-                    
-                except ValueError as e:
-                    result['status'] = 'Failed'
-                    result['message'] = f'Validation error: {str(e)}'
-                except DhanSuperOrderError as e:
-                    result['status'] = 'Failed'
-                    result['message'] = f'Order error: {str(e)}'
-                except Exception as e:
-                    result['status'] = 'Failed'
-                    result['message'] = f'Error: {str(e)}'
-                
-                results.append(result)
-            
-            # Calculate statistics
-            success_count = sum(1 for r in results if r['status'] == 'Success')
-            failed_count = sum(1 for r in results if r['status'] == 'Failed')
-            
-            flash(f'Processed {len(results)} orders: {success_count} successful, {failed_count} failed.', 
-                  'success' if failed_count == 0 else 'warning')
-            
-            return render_template('bulk_upload.html', results=results, 
-                                 success_count=success_count, failed_count=failed_count)
-            
-        except Exception as e:
-            import traceback
+            # Start background job
+            job_id = create_bulk_job(df, session['client_id'], session['access_token'])
+            flash(f'Started bulk upload. Job ID: {job_id}', 'info')
+            return redirect(url_for('bulk_status', job_id=job_id))
             error_details = traceback.format_exc()
             logger.error(f'ERROR in bulk upload: {error_details}')
             flash(f'Error processing file: {str(e)}', 'error')
             return redirect(request.url)
+        finally:
+            with bulk_lock:
+                bulk_in_progress = False
     
     # GET request - show the upload form
-    return render_template('bulk_upload.html')
+    return render_template('bulk_upload.html', bulk_in_progress=False)
+
+
+def _job_snapshot(job_id: str):
+    with bulk_jobs_lock:
+        job = bulk_jobs.get(job_id)
+        if job is None:
+            return None
+        # Shallow copy excluding non-serializable items
+        snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+        return snap
+
+
+@app.route('/bulk-status/<job_id>', methods=['GET'])
+@login_required
+def bulk_status(job_id):
+    job = _job_snapshot(job_id)
+    if job is None:
+        flash('Bulk job not found or expired.', 'error')
+        return redirect(url_for('bulk_upload'))
+    return render_template(
+        'bulk_upload.html',
+        bulk_in_progress=job['status'] in ['pending', 'running'],
+        job=job,
+        results=job.get('results', []),
+        success_count=job.get('success_count', 0),
+        failed_count=job.get('failed_count', 0)
+    )
+
+
+@app.route('/bulk-status/<job_id>/json', methods=['GET'])
+@login_required
+def bulk_status_json(job_id):
+    job = _job_snapshot(job_id)
+    if job is None:
+        return jsonify({'error': 'not found'}), 404
+    # Trim results in JSON to avoid huge payload; send last 20
+    results = job.get('results', [])
+    job['results'] = results[-20:]
+    return jsonify(job)
+
+
+@app.route('/bulk-cancel/<job_id>', methods=['POST'])
+@login_required
+def bulk_cancel(job_id):
+    with bulk_jobs_lock:
+        job = bulk_jobs.get(job_id)
+        if job is None:
+            flash('Bulk job not found or already finished.', 'warning')
+            return redirect(url_for('bulk_upload'))
+        cancel_event = job.get('cancel_event')
+        if cancel_event:
+            cancel_event.set()
+            job['message'] = 'Cancellation requested'
+            job['status'] = 'cancelling'
+    flash('Bulk upload cancellation requested. Pending orders will stop shortly.', 'info')
+    return redirect(url_for('bulk_status', job_id=job_id))
+
+
+@app.route('/bulk-cancel', methods=['POST'])
+@login_required
+def bulk_cancel():
+    """Cancel an in-progress bulk upload"""
+    global bulk_cancel_event, bulk_in_progress
+    bulk_cancel_event.set()
+    flash('Bulk upload cancellation requested. Pending orders will stop shortly.', 'info')
+    return redirect(url_for('bulk_upload'))
 
 
 
