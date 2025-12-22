@@ -7,7 +7,7 @@ Users can manage credentials and place orders through a browser.
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from functools import wraps
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from werkzeug.utils import secure_filename
 import logging
@@ -21,9 +21,16 @@ from validator.instruments.dhan_refresher import refresh_dhan_instruments
 from apis.dhan.auth import authenticate, DhanAuthError
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Random secret key for sessions
+
+# IMPORTANT: Do not use a random secret in production.
+# A random secret causes all sessions to invalidate on every restart/scale event.
+app.secret_key = os.environ.get('FLASK_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'CHANGE_ME_DEV_ONLY'
+
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True if os.environ.get('RENDER') else False
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 
 # Setup logging - logs to console (visible in Render)
@@ -41,12 +48,6 @@ if not os.environ.get('RENDER'):
     file_handler = logging.FileHandler('dhan_app.log')
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
-
-app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Random secret key for sessions
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config['UPLOAD_FOLDER'] = 'uploads'
-ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
 
 # Store order history in memory (in production, use a database)
 # Limit to last 1000 orders to prevent memory bloat
@@ -123,12 +124,16 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
     """Background worker to process bulk orders without blocking the request thread"""
     with bulk_jobs_lock:
         job = bulk_jobs.get(job_id)
-    if job is None:
-        return
+        if job is None:
+            return
     try:
-        job['status'] = 'running'
-        job['message'] = 'Processing'
-        job['started_at'] = datetime.now().isoformat()
+        with bulk_jobs_lock:
+            job = bulk_jobs.get(job_id)
+            if job is None:
+                return
+            job['status'] = 'running'
+            job['message'] = 'Processing'
+            job['started_at'] = datetime.now().isoformat()
 
         # Warm instruments once to avoid repeated loads during the run
         try:
@@ -141,8 +146,12 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
 
         for index, row in df.iterrows():
             if cancel_event.is_set():
-                job['status'] = 'cancelled'
-                job['message'] = 'Cancelled by user'
+                with bulk_jobs_lock:
+                    job = bulk_jobs.get(job_id)
+                    if job is None:
+                        return
+                    job['status'] = 'cancelled'
+                    job['message'] = 'Cancelled by user'
                 break
 
             row_num = index + 2  # Excel row number (1-indexed + header)
@@ -158,8 +167,12 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 if pd.isna(row.get('Symbol')) or not str(row.get('Symbol')).strip():
                     result['status'] = 'Failed'
                     result['message'] = 'Symbol is required'
-                    job['results'].append(result)
-                    job['failed_count'] += 1
+                    with bulk_jobs_lock:
+                        job = bulk_jobs.get(job_id)
+                        if job is None:
+                            return
+                        job['results'].append(result)
+                        job['failed_count'] += 1
                     continue
 
                 # Decide flow: SUPER or FOREVER
@@ -198,8 +211,12 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     else:
                         result['status'] = 'Failed'
                         result['message'] = 'TriggerPrice is required for Forever Orders'
-                        job['results'].append(result)
-                        job['failed_count'] += 1
+                        with bulk_jobs_lock:
+                            job = bulk_jobs.get(job_id)
+                            if job is None:
+                                return
+                            job['results'].append(result)
+                            job['failed_count'] += 1
                         continue
                     if 'OrderFlag' in df.columns and not pd.isna(row.get('OrderFlag')):
                         order_data['order_flag'] = str(row['OrderFlag']).strip().upper()
@@ -225,16 +242,24 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     else:
                         result['status'] = 'Failed'
                         result['message'] = 'TargetPrice is required for Super Orders'
-                        job['results'].append(result)
-                        job['failed_count'] += 1
+                        with bulk_jobs_lock:
+                            job = bulk_jobs.get(job_id)
+                            if job is None:
+                                return
+                            job['results'].append(result)
+                            job['failed_count'] += 1
                         continue
                     if 'StopLoss' in df.columns and not pd.isna(row.get('StopLoss')) and row.get('StopLoss') != '':
                         order_data['stop_loss_price'] = float(row['StopLoss'])
                     else:
                         result['status'] = 'Failed'
                         result['message'] = 'StopLoss is required for Super Orders'
-                        job['results'].append(result)
-                        job['failed_count'] += 1
+                        with bulk_jobs_lock:
+                            job = bulk_jobs.get(job_id)
+                            if job is None:
+                                return
+                            job['results'].append(result)
+                            job['failed_count'] += 1
                         continue
                     if 'TrailingStopLoss' in df.columns and not pd.isna(row.get('TrailingStopLoss')) and row.get('TrailingStopLoss') != '':
                         order_data['trailing_jump'] = float(row['TrailingStopLoss'])
@@ -271,32 +296,60 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 result['status'] = 'Success'
                 result['message'] = 'Order placed successfully'
                 result['order_id'] = response.get('orderId', 'N/A')
-                job['success_count'] += 1
+                with bulk_jobs_lock:
+                    job = bulk_jobs.get(job_id)
+                    if job is None:
+                        return
+                    job['success_count'] += 1
             except ValueError as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Validation error: {str(e)}'
-                job['failed_count'] += 1
+                with bulk_jobs_lock:
+                    job = bulk_jobs.get(job_id)
+                    if job is None:
+                        return
+                    job['failed_count'] += 1
             except (DhanSuperOrderError, DhanForeverOrderError) as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Order error: {str(e)}'
-                job['failed_count'] += 1
+                with bulk_jobs_lock:
+                    job = bulk_jobs.get(job_id)
+                    if job is None:
+                        return
+                    job['failed_count'] += 1
             except Exception as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Error: {str(e)}'
-                job['failed_count'] += 1
+                with bulk_jobs_lock:
+                    job = bulk_jobs.get(job_id)
+                    if job is None:
+                        return
+                    job['failed_count'] += 1
 
-            job['results'].append(result)
+            with bulk_jobs_lock:
+                job = bulk_jobs.get(job_id)
+                if job is None:
+                    return
+                job['results'].append(result)
 
-        if job['status'] != 'cancelled':
-            job['status'] = 'completed'
-            job['message'] = 'Completed'
-        job['finished_at'] = datetime.now().isoformat()
+        with bulk_jobs_lock:
+            job = bulk_jobs.get(job_id)
+            if job is None:
+                return
+            if job.get('status') != 'cancelled':
+                job['status'] = 'completed'
+                job['message'] = 'Completed'
+            job['finished_at'] = datetime.now().isoformat()
 
     except Exception as e:  # pragma: no cover
-        job['status'] = 'failed'
-        job['message'] = 'Failed'
-        job['error'] = str(e)
-        job['finished_at'] = datetime.now().isoformat()
+        with bulk_jobs_lock:
+            job = bulk_jobs.get(job_id)
+            if job is None:
+                return
+            job['status'] = 'failed'
+            job['message'] = 'Failed'
+            job['error'] = str(e)
+            job['finished_at'] = datetime.now().isoformat()
 
 
 
@@ -338,6 +391,7 @@ def login():
             session['client_id'] = client_id
             session['access_token'] = access_token
             session['login_time'] = datetime.now().isoformat()
+            session.permanent = True
             
             flash('Login successful! Welcome to Dhan Super Orders.', 'success')
             return redirect(url_for('dashboard'))
@@ -438,13 +492,20 @@ def place_order():
                 'timestamp': datetime.now().isoformat(),
                 'order_id': result['orderId'],
                 'status': result['orderStatus'],
+                'order_category': order_flow,
                 'symbol': order_data['symbol'],
+                'exchange': order_data.get('exchange'),
                 'txn_type': order_data['txn_type'],
                 'qty': order_data['qty'],
                 'order_type': order_data['order_type'],
                 'price': order_data['price'],
-                'target_price': order_data['target_price'],
-                'stop_loss_price': order_data['stop_loss_price'],
+                'product': order_data.get('product'),
+                # SUPER fields (may not exist for FOREVER)
+                'target_price': order_data.get('target_price'),
+                'stop_loss_price': order_data.get('stop_loss_price'),
+                # FOREVER fields (may not exist for SUPER)
+                'trigger_price': order_data.get('trigger_price'),
+                'order_flag': order_data.get('order_flag'),
             }
             order_history.insert(0, order_record)  # Add to beginning
             # Keep only last MAX_ORDER_HISTORY orders
@@ -582,8 +643,10 @@ def _job_snapshot(job_id: str):
         job = bulk_jobs.get(job_id)
         if job is None:
             return None
-        # Shallow copy excluding non-serializable items
+        # Copy excluding non-serializable items; clone results list to avoid race with worker thread
         snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+        if 'results' in snap and isinstance(snap['results'], list):
+            snap['results'] = list(snap['results'])
         return snap
 
 
@@ -596,7 +659,7 @@ def bulk_status(job_id):
         return redirect(url_for('bulk_upload'))
     return render_template(
         'bulk_upload.html',
-        bulk_in_progress=job['status'] in ['pending', 'running'],
+        bulk_in_progress=job['status'] in ['pending', 'running', 'cancelling'],
         job=job,
         results=job.get('results', []),
         success_count=job.get('success_count', 0),

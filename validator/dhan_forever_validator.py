@@ -65,8 +65,12 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("product")
     def validate_product(cls, v: str):
         v = v.strip().upper()
-        if v not in {"CNC", "MTF", ""}:
-            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF")
+        # Dhan docs typically mention CNC/MTF for Forever orders, but allow other product types
+        # so users can test broker-side behavior (rejections/acceptance).
+        if not v:
+            raise ValueError("product is required for Forever Orders")
+        if v not in {"CNC", "MTF", "INTRADAY", "MARGIN"}:
+            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF, INTRADAY, MARGIN")
         return v
 
     @field_validator("trigger_price")
@@ -85,8 +89,8 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("order_flag")
     def validate_flag(cls, v: str):
         v = v.strip().upper()
-        if v not in {"SINGLE", "OCO" , "NORMAL"}:
-            raise ValueError("order_flag must be SINGLE or OCO")
+        if v not in {"SINGLE", "OCO", "NORMAL"}:
+            raise ValueError("order_flag must be SINGLE, OCO, or NORMAL")
         return v
 
     @field_validator("validity")

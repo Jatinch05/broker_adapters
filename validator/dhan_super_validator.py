@@ -55,7 +55,7 @@ class DhanSuperOrderIntent(BaseModel):
     @field_validator("product")
     def validate_product(cls, v: str):
         v = v.strip().upper()
-        if v not in {"INTRADAY", "CNC", "MARGIN", "MTF"}:
+        if v not in {"INTRADAY", "CNC", "MARGIN", "MTF", "NORMAL"}:
             raise ValueError(
                 "Invalid product for Super Order. Allowed: INTRADAY, CNC, MARGIN, MTF"
             )

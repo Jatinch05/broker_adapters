@@ -180,6 +180,7 @@
                 <select id="order_flag" name="order_flag">
                     <option value="SINGLE">SINGLE</option>
                     <option value="OCO">OCO</option>
+                    <option value="NORMAL">NORMAL</option>
                 </select>
             </div>
 
@@ -341,6 +342,7 @@ function toggleFlow() {
         const group = el.closest('.form-group');
         group.style.display = superVisible ? 'block' : 'none';
         el.required = superVisible && (id !== 'trailing_jump');
+        el.disabled = !superVisible;
     });
     foreverIds.forEach(id => {
         const el = document.getElementById(id);
@@ -348,7 +350,9 @@ function toggleFlow() {
         group.style.display = (!superVisible) ? 'block' : 'none';
         // Trigger price required for forever; others conditional
         el.required = (!superVisible && id === 'trigger_price');
+        el.disabled = superVisible;
     });
+
 }
 
 toggleFlow();

@@ -62,10 +62,26 @@
                             {% endif %}
                         </td>
                         <td style="padding: 12px; text-align: right; color: #10b981;">
-                            ₹{{ "%.2f"|format(order.target_price) }}
+                            {% if order.order_category == 'FOREVER' %}
+                                {% if order.trigger_price %}
+                                    Trigger ₹{{ "%.2f"|format(order.trigger_price) }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            {% else %}
+                                {% if order.target_price is not none %}
+                                    ₹{{ "%.2f"|format(order.target_price) }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            {% endif %}
                         </td>
                         <td style="padding: 12px; text-align: right; color: #ef4444;">
-                            ₹{{ "%.2f"|format(order.stop_loss_price) }}
+                            {% if order.stop_loss_price is not none %}
+                                ₹{{ "%.2f"|format(order.stop_loss_price) }}
+                            {% else %}
+                                -
+                            {% endif %}
                         </td>
                         <td style="padding: 12px; text-align: center;">
                             <span style="
@@ -94,7 +110,7 @@
         <div style="text-align: center; padding: 60px 20px; color: #6b7280;">
             <div style="font-size: 48px; margin-bottom: 15px;">📭</div>
             <h3 style="margin-bottom: 10px;">No Orders Yet</h3>
-            <p style="margin-bottom: 20px;">You haven't placed any super orders yet.</p>
+            <p style="margin-bottom: 20px;">You haven't placed any orders yet.</p>
             <a href="{{ url_for('place_order') }}" class="btn btn-primary">
                 Place Your First Order
             </a>

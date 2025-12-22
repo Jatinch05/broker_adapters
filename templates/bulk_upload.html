@@ -54,7 +54,7 @@
             Bulk job {{ job.id }} is {{ job.status }}. You can cancel it below.
         </div>
         {% endif %}
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST" action="{{ url_for('bulk_upload') }}" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="file">Select File (.xlsx, .xls, .csv)</label>
                 <input type="file" id="file" name="file" accept=".xlsx,.xls,.csv" required 
@@ -76,6 +76,7 @@
     {% if job %}
     <div class="card" style="margin-bottom: 30px;">
         <h2>📡 Bulk Job Status</h2>
+        {% set processed = (success_count or 0) + (failed_count or 0) %}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
             <div class="stat-chip">Job ID: {{ job.id }}</div>
             <div class="stat-chip">Status: {{ job.status }}</div>
@@ -83,6 +84,15 @@
             <div class="stat-chip">Total: {{ job.total }}</div>
             <div class="stat-chip">Success: {{ success_count or 0 }}</div>
             <div class="stat-chip">Failed: {{ failed_count or 0 }}</div>
+        </div>
+        <div style="margin-top: 10px;">
+            <div style="display:flex; justify-content: space-between; font-size: 0.95em; color: #374151; margin-bottom: 6px;">
+                <div>Processed: {{ processed }} / {{ job.total }}</div>
+                <div>{% if job.total and job.total > 0 %}{{ ((processed / job.total) * 100) | round(1) }}%{% else %}0%{% endif %}</div>
+            </div>
+            <div style="height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden;">
+                <div id="bulkProgressBar" style="height: 10px; width: {% if job.total and job.total > 0 %}{{ ((processed / job.total) * 100) }}{% else %}0{% endif %}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
+            </div>
         </div>
         {% if bulk_in_progress %}
         <div style="margin-top: 6px; color: #6b7280;">Auto-refreshing every 2s…</div>
