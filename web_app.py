@@ -14,6 +14,7 @@ import logging
 import time
 import threading
 import uuid
+import json
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
 from orchestrator.forever import DhanForeverOrderOrchestrator, DhanForeverOrderError
 from validator.instruments.dhan_store import DhanStore
@@ -62,6 +63,35 @@ rate_limit_timestamps = []
 # Bulk processing jobs (background threads)
 bulk_jobs = {}
 bulk_jobs_lock = threading.Lock()
+
+# File-backed snapshots to survive multi-process servers (e.g., gunicorn workers).
+# This is not multi-instance safe, but it fixes "status not updating" when requests
+# get routed to a different process.
+BULK_JOBS_DIR = os.path.join(app.config['UPLOAD_FOLDER'], 'bulk_jobs')
+os.makedirs(BULK_JOBS_DIR, exist_ok=True)
+
+
+def _bulk_job_path(job_id: str) -> str:
+    return os.path.join(BULK_JOBS_DIR, f"{job_id}.json")
+
+
+def _persist_job_snapshot(job_id: str, snap: dict) -> None:
+    path = _bulk_job_path(job_id)
+    tmp = f"{path}.tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump(snap, f)
+    os.replace(tmp, path)
+
+
+def _load_job_snapshot(job_id: str):
+    path = _bulk_job_path(job_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
 
 
 
@@ -112,6 +142,13 @@ def create_bulk_job(df: pd.DataFrame, client_id: str, access_token: str) -> str:
     }
     with bulk_jobs_lock:
         bulk_jobs[job_id] = job
+
+    # Persist initial snapshot so other processes can serve status.
+    try:
+        snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+        _persist_job_snapshot(job_id, snap)
+    except Exception as e:  # pragma: no cover
+        logger.warning(f"Bulk job {job_id}: snapshot persist warning: {e}")
     thread = threading.Thread(
         target=_run_bulk_job,
         args=(job_id, df.copy(), client_id, access_token, cancel_event),
@@ -135,6 +172,8 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
             job['status'] = 'running'
             job['message'] = 'Processing'
             job['started_at'] = datetime.now().isoformat()
+
+        last_persist = time.monotonic()
 
         # Warm instruments once to avoid repeated loads during the run
         try:
@@ -174,6 +213,11 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                         return
                     job['status'] = 'cancelled'
                     job['message'] = 'Cancelled by user'
+                    snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+                try:
+                    _persist_job_snapshot(job_id, snap)
+                except Exception:  # pragma: no cover
+                    pass
                 break
 
             row_num = index + 2  # Excel row number (1-indexed + header)
@@ -421,6 +465,19 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     return
                 job['results'].append(result)
 
+                # Persist at most ~2x/sec to keep UI responsive without slowing the worker.
+                now = time.monotonic()
+                if now - last_persist >= 0.5:
+                    snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+                    # Keep persisted results bounded to avoid huge files
+                    if isinstance(snap.get('results'), list) and len(snap['results']) > 200:
+                        snap['results'] = snap['results'][-200:]
+                    try:
+                        _persist_job_snapshot(job_id, snap)
+                    except Exception:  # pragma: no cover
+                        pass
+                    last_persist = now
+
         with bulk_jobs_lock:
             job = bulk_jobs.get(job_id)
             if job is None:
@@ -429,6 +486,14 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 job['status'] = 'completed'
                 job['message'] = 'Completed'
             job['finished_at'] = datetime.now().isoformat()
+
+            snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+            if isinstance(snap.get('results'), list) and len(snap['results']) > 200:
+                snap['results'] = snap['results'][-200:]
+        try:
+            _persist_job_snapshot(job_id, snap)
+        except Exception:  # pragma: no cover
+            pass
 
     except Exception as e:  # pragma: no cover
         with bulk_jobs_lock:
@@ -439,6 +504,12 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
             job['message'] = 'Failed'
             job['error'] = str(e)
             job['finished_at'] = datetime.now().isoformat()
+
+            snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+        try:
+            _persist_job_snapshot(job_id, snap)
+        except Exception:
+            pass
 
 
 
@@ -744,13 +815,19 @@ def bulk_upload():
 def _job_snapshot(job_id: str):
     with bulk_jobs_lock:
         job = bulk_jobs.get(job_id)
-        if job is None:
-            return None
-        # Copy excluding non-serializable items; clone results list to avoid race with worker thread
-        snap = {k: v for k, v in job.items() if k != 'cancel_event'}
-        if 'results' in snap and isinstance(snap['results'], list):
-            snap['results'] = list(snap['results'])
-        return snap
+        if job is not None:
+            # Copy excluding non-serializable items; clone results list to avoid race with worker thread
+            snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+            if 'results' in snap and isinstance(snap['results'], list):
+                snap['results'] = list(snap['results'])
+            return snap
+
+    # Fallback to disk snapshot for multi-process servers
+    snap = _load_job_snapshot(job_id)
+    if snap is not None and isinstance(snap.get('results'), list):
+        # Ensure results is a list of dicts
+        snap['results'] = list(snap['results'])
+    return snap
 
 
 @app.route('/bulk-status/<job_id>', methods=['GET'])

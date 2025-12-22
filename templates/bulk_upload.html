@@ -244,11 +244,12 @@
         }
     }
 </style>
-{% if bulk_in_progress and job %}
+{% if job %}
 <script>
 const jobId = "{{ job.id }}";
 const statusUrl = `/bulk-status/${jobId}/json`;
 const terminal = new Set(['completed', 'failed', 'cancelled']);
+let didHardReload = false;
 
 function escapeHtml(s) {
     return String(s)
@@ -262,6 +263,11 @@ function escapeHtml(s) {
 async function pollJob(){
     try {
         const res = await fetch(statusUrl);
+        if(res.status === 404 && !didHardReload){
+            didHardReload = true;
+            window.location.reload();
+            return;
+        }
         if(!res.ok) return;
         const data = await res.json();
         if(data.status){

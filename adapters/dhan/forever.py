@@ -3,6 +3,7 @@ import time
 from typing import Dict, Any
 
 from adapters.dhan.errors import DhanSuperOrderError as _CompatError
+from adapters.dhan.http_session import get_session
 
 DHAN_BASE_URL = "https://api.dhan.co"
 
@@ -51,7 +52,7 @@ def place_dhan_forever_order(*, intent, security_id: str, exchange_segment: str,
     last_exc = None
     for attempt in range(1, max_attempts + 1):
         try:
-            resp = requests.post(url, json=payload, headers=headers, timeout=5)
+            resp = get_session().post(url, json=payload, headers=headers, timeout=5)
             break
         except (requests.Timeout, requests.ConnectionError) as exc:
             last_exc = exc

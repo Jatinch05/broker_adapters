@@ -2,6 +2,7 @@ import requests
 import time
 from typing import Dict, Any
 from adapters.dhan.errors import DhanSuperOrderError
+from adapters.dhan.http_session import get_session
 
 DHAN_BASE_URL = "https://api.dhan.co"
 
@@ -54,7 +55,7 @@ def place_dhan_super_order(
     last_exc = None
     for attempt in range(1, max_attempts + 1):
         try:
-            response = requests.post(
+            response = get_session().post(
                 url,
                 json=payload,
                 headers=headers,
