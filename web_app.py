@@ -98,6 +98,7 @@ def create_bulk_job(df: pd.DataFrame, client_id: str, access_token: str) -> str:
     cancel_event = threading.Event()
     job = {
         'id': job_id,
+        'client_id': client_id,
         'status': 'pending',
         'message': 'Queued',
         'results': [],
@@ -144,7 +145,28 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
         orch_super = DhanSuperOrderOrchestrator(client_id=client_id, access_token=access_token)
         orch_forever = DhanForeverOrderOrchestrator(client_id=client_id, access_token=access_token)
 
-        for index, row in df.iterrows():
+        # Precompute column presence (avoid repeated 'in df.columns' checks)
+        cols = set(df.columns)
+        has_flow_col = 'DhanOrderType' in cols
+        has_order_category = 'OrderCategory' in cols
+        has_trigger = 'TriggerPrice' in cols
+        has_price = 'Price' in cols
+        has_order_flag = 'OrderFlag' in cols
+        has_validity = 'Validity' in cols
+        has_dq = 'DisclosedQuantity' in cols
+        has_tag = 'Tag' in cols
+        has_price1 = 'Price1' in cols
+        has_trigger1 = 'TriggerPrice1' in cols
+        has_qty1 = 'Quantity1' in cols
+        has_target = 'TargetPrice' in cols
+        has_sl = 'StopLoss' in cols
+        has_trail = 'TrailingStopLoss' in cols
+        has_strike = 'StrikePrice' in cols
+        has_expiry = 'ExpiryDate' in cols
+        has_opt_type = 'OptionType' in cols
+
+        # Iterate efficiently (faster than iterrows)
+        for index, row in enumerate(df.itertuples(index=False), start=0):
             if cancel_event.is_set():
                 with bulk_jobs_lock:
                     job = bulk_jobs.get(job_id)
@@ -157,14 +179,15 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
             row_num = index + 2  # Excel row number (1-indexed + header)
             result = {
                 'row': row_num,
-                'symbol': row.get('Symbol', 'N/A'),
+                'symbol': getattr(row, 'Symbol', 'N/A'),
                 'status': 'Processing',
                 'message': '',
                 'order_id': None
             }
             try:
                 # Validate required fields
-                if pd.isna(row.get('Symbol')) or not str(row.get('Symbol')).strip():
+                row_symbol = getattr(row, 'Symbol', None)
+                if row_symbol is None or pd.isna(row_symbol) or not str(row_symbol).strip():
                     result['status'] = 'Failed'
                     result['message'] = 'Symbol is required'
                     with bulk_jobs_lock:
@@ -177,38 +200,57 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
 
                 # Decide flow: SUPER or FOREVER
                 order_flow = 'SUPER'
-                if 'DhanOrderType' in df.columns and not pd.isna(row.get('DhanOrderType')):
-                    order_flow = str(row.get('DhanOrderType')).strip().upper()
-                elif 'OrderCategory' in df.columns and not pd.isna(row.get('OrderCategory')):
-                    order_flow = str(row.get('OrderCategory')).strip().upper()
-                is_forever = order_flow == 'FOREVER' or ('TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')))
+                if has_flow_col:
+                    v = getattr(row, 'DhanOrderType', None)
+                    if v is not None and not pd.isna(v):
+                        order_flow = str(v).strip().upper()
+                elif has_order_category:
+                    v = getattr(row, 'OrderCategory', None)
+                    if v is not None and not pd.isna(v):
+                        order_flow = str(v).strip().upper()
+                is_forever = order_flow == 'FOREVER' or (has_trigger and not pd.isna(getattr(row, 'TriggerPrice', None)))
 
                 base_common = {
-                    'symbol': str(row['Symbol']).strip().upper(),
-                    'exchange': str(row['Exchange']).strip().upper(),
-                    'txn_type': str(row['TransactionType']).strip().upper(),
-                    'qty': int(row['Quantity']),
-                    'order_type': str(row['OrderType']).strip().upper(),
-                    'product': str(row['ProductType']).strip().upper(),
+                    'symbol': str(getattr(row, 'Symbol')).strip().upper(),
+                    'exchange': str(getattr(row, 'Exchange')).strip().upper(),
+                    'txn_type': str(getattr(row, 'TransactionType')).strip().upper(),
+                    'qty': int(getattr(row, 'Quantity')),
+                    'order_type': str(getattr(row, 'OrderType')).strip().upper(),
+                    'product': str(getattr(row, 'ProductType')).strip().upper(),
                     'price': None,
                 }
-                if 'Price' in df.columns and not pd.isna(row.get('Price')) and row.get('Price') != '':
-                    base_common['price'] = float(row['Price'])
+                if has_price:
+                    v = getattr(row, 'Price', None)
+                    if v is not None and not pd.isna(v) and v != '':
+                        base_common['price'] = float(v)
 
                 # Optional derivative lookup fields
-                if 'StrikePrice' in row and not pd.isna(row['StrikePrice']) and row['StrikePrice'] != '':
-                    base_common['strike_price'] = float(row['StrikePrice'])
-                if 'ExpiryDate' in row and not pd.isna(row['ExpiryDate']) and row['ExpiryDate'] != '':
-                    base_common['expiry_date'] = str(row['ExpiryDate']).strip()
-                if 'OptionType' in row and not pd.isna(row['OptionType']) and row['OptionType'] != '':
-                    base_common['option_type'] = str(row['OptionType']).strip().upper()
+                if has_strike:
+                    v = getattr(row, 'StrikePrice', None)
+                    if v is not None and not pd.isna(v) and v != '':
+                        base_common['strike_price'] = float(v)
+                if has_expiry:
+                    v = getattr(row, 'ExpiryDate', None)
+                    if v is not None and not pd.isna(v) and v != '':
+                        base_common['expiry_date'] = str(v).strip()
+                if has_opt_type:
+                    v = getattr(row, 'OptionType', None)
+                    if v is not None and not pd.isna(v) and v != '':
+                        base_common['option_type'] = str(v).strip().upper()
 
                 if is_forever:
                     order_data = dict(base_common)
                     order_data['order_category'] = 'FOREVER'
-                    if 'TriggerPrice' in df.columns and not pd.isna(row.get('TriggerPrice')) and row.get('TriggerPrice') != '':
-                        order_data['trigger_price'] = float(row['TriggerPrice'])
+                    if has_trigger:
+                        v = getattr(row, 'TriggerPrice', None)
+                        if v is not None and not pd.isna(v) and v != '':
+                            order_data['trigger_price'] = float(v)
+                        else:
+                            v = None
                     else:
+                        v = None
+
+                    if v is None:
                         result['status'] = 'Failed'
                         result['message'] = 'TriggerPrice is required for Forever Orders'
                         with bulk_jobs_lock:
@@ -218,28 +260,58 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                             job['results'].append(result)
                             job['failed_count'] += 1
                         continue
-                    if 'OrderFlag' in df.columns and not pd.isna(row.get('OrderFlag')):
-                        order_data['order_flag'] = str(row['OrderFlag']).strip().upper()
+
+                    if has_order_flag:
+                        of = getattr(row, 'OrderFlag', None)
+                        if of is not None and not pd.isna(of):
+                            order_data['order_flag'] = str(of).strip().upper()
+                        else:
+                            order_data['order_flag'] = 'SINGLE'
                     else:
                         order_data['order_flag'] = 'SINGLE'
                     if order_data['order_flag'] == 'OCO':
-                        if 'Price1' in df.columns and not pd.isna(row.get('Price1')): order_data['price1'] = float(row['Price1'])
-                        if 'TriggerPrice1' in df.columns and not pd.isna(row.get('TriggerPrice1')): order_data['trigger_price1'] = float(row['TriggerPrice1'])
-                        if 'Quantity1' in df.columns and not pd.isna(row.get('Quantity1')): order_data['quantity1'] = int(row['Quantity1'])
-                    if 'Validity' in df.columns and not pd.isna(row.get('Validity')):
-                        order_data['validity'] = str(row['Validity']).strip().upper()
+                        if has_price1:
+                            vv = getattr(row, 'Price1', None)
+                            if vv is not None and not pd.isna(vv):
+                                order_data['price1'] = float(vv)
+                        if has_trigger1:
+                            vv = getattr(row, 'TriggerPrice1', None)
+                            if vv is not None and not pd.isna(vv):
+                                order_data['trigger_price1'] = float(vv)
+                        if has_qty1:
+                            vv = getattr(row, 'Quantity1', None)
+                            if vv is not None and not pd.isna(vv):
+                                order_data['quantity1'] = int(vv)
+
+                    if has_validity:
+                        vv = getattr(row, 'Validity', None)
+                        if vv is not None and not pd.isna(vv):
+                            order_data['validity'] = str(vv).strip().upper()
+                        else:
+                            order_data['validity'] = 'DAY'
                     else:
                         order_data['validity'] = 'DAY'
-                    if 'DisclosedQuantity' in df.columns and not pd.isna(row.get('DisclosedQuantity')):
-                        order_data['disclosed_quantity'] = int(row['DisclosedQuantity'])
-                    if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
-                        order_data['tag'] = str(row['Tag']).strip()
+                    if has_dq:
+                        vv = getattr(row, 'DisclosedQuantity', None)
+                        if vv is not None and not pd.isna(vv):
+                            order_data['disclosed_quantity'] = int(vv)
+                    if has_tag:
+                        vv = getattr(row, 'Tag', None)
+                        if vv is not None and not pd.isna(vv) and vv != '':
+                            order_data['tag'] = str(vv).strip()
                 else:
                     order_data = dict(base_common)
                     order_data['order_category'] = 'SUPER'
-                    if 'TargetPrice' in df.columns and not pd.isna(row.get('TargetPrice')) and row.get('TargetPrice') != '':
-                        order_data['target_price'] = float(row['TargetPrice'])
+                    if has_target:
+                        v = getattr(row, 'TargetPrice', None)
+                        if v is not None and not pd.isna(v) and v != '':
+                            order_data['target_price'] = float(v)
+                        else:
+                            v = None
                     else:
+                        v = None
+
+                    if v is None:
                         result['status'] = 'Failed'
                         result['message'] = 'TargetPrice is required for Super Orders'
                         with bulk_jobs_lock:
@@ -249,9 +321,17 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                             job['results'].append(result)
                             job['failed_count'] += 1
                         continue
-                    if 'StopLoss' in df.columns and not pd.isna(row.get('StopLoss')) and row.get('StopLoss') != '':
-                        order_data['stop_loss_price'] = float(row['StopLoss'])
+
+                    if has_sl:
+                        vv = getattr(row, 'StopLoss', None)
+                        if vv is not None and not pd.isna(vv) and vv != '':
+                            order_data['stop_loss_price'] = float(vv)
+                        else:
+                            vv = None
                     else:
+                        vv = None
+
+                    if vv is None:
                         result['status'] = 'Failed'
                         result['message'] = 'StopLoss is required for Super Orders'
                         with bulk_jobs_lock:
@@ -261,12 +341,21 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                             job['results'].append(result)
                             job['failed_count'] += 1
                         continue
-                    if 'TrailingStopLoss' in df.columns and not pd.isna(row.get('TrailingStopLoss')) and row.get('TrailingStopLoss') != '':
-                        order_data['trailing_jump'] = float(row['TrailingStopLoss'])
-                    if 'Tag' in df.columns and not pd.isna(row.get('Tag')) and row.get('Tag') != '':
-                        order_data['tag'] = str(row['Tag']).strip()
 
-                logger.info(f"Bulk job {job_id}: Placing {order_data['order_category']} row={row_num} symbol={order_data['symbol']} ex={order_data['exchange']} qty={order_data['qty']}")
+                    if has_trail:
+                        vv = getattr(row, 'TrailingStopLoss', None)
+                        if vv is not None and not pd.isna(vv) and vv != '':
+                            order_data['trailing_jump'] = float(vv)
+                    if has_tag:
+                        vv = getattr(row, 'Tag', None)
+                        if vv is not None and not pd.isna(vv) and vv != '':
+                            order_data['tag'] = str(vv).strip()
+
+                # Keep logging light (bulk speed + avoids noisy logs)
+                if (row_num % 25) == 0:
+                    logger.info(
+                        f"Bulk job {job_id}: progress {row_num - 1}/{len(df)} (last={order_data['order_category']} {order_data['symbol']})"
+                    )
                 rate_limit_wait()
                 if is_forever:
                     response = orch_forever.place_forever_order(order_data)
@@ -625,6 +714,7 @@ def bulk_upload():
 
             # Start background job
             job_id = create_bulk_job(df, session['client_id'], session['access_token'])
+            session['last_bulk_job_id'] = job_id
             flash(f'Started bulk upload. Job ID: {job_id}', 'info')
             return redirect(url_for('bulk_status', job_id=job_id))
         except Exception as e:
@@ -634,8 +724,21 @@ def bulk_upload():
             flash(f'Error processing file: {str(e)}', 'error')
             return redirect(request.url)
     
-    # GET request - show the upload form
-    return render_template('bulk_upload.html', bulk_in_progress=False)
+    # GET request - show the upload form (resume last job if present)
+    job = None
+    last_id = session.get('last_bulk_job_id')
+    if last_id:
+        snap = _job_snapshot(last_id)
+        if snap is not None and snap.get('client_id') == session.get('client_id'):
+            job = snap
+    return render_template(
+        'bulk_upload.html',
+        bulk_in_progress=bool(job and job.get('status') in ['pending', 'running', 'cancelling']),
+        job=job,
+        results=(job.get('results', [])[-200:] if job else []),
+        success_count=(job.get('success_count', 0) if job else 0),
+        failed_count=(job.get('failed_count', 0) if job else 0),
+    )
 
 
 def _job_snapshot(job_id: str):
@@ -657,11 +760,15 @@ def bulk_status(job_id):
     if job is None:
         flash('Bulk job not found or expired.', 'error')
         return redirect(url_for('bulk_upload'))
+    if job.get('client_id') != session.get('client_id'):
+        flash('Bulk job not found or expired.', 'error')
+        return redirect(url_for('bulk_upload'))
+    session['last_bulk_job_id'] = job_id
     return render_template(
         'bulk_upload.html',
         bulk_in_progress=job['status'] in ['pending', 'running', 'cancelling'],
         job=job,
-        results=job.get('results', []),
+        results=job.get('results', [])[-200:],
         success_count=job.get('success_count', 0),
         failed_count=job.get('failed_count', 0)
     )
@@ -672,6 +779,8 @@ def bulk_status(job_id):
 def bulk_status_json(job_id):
     job = _job_snapshot(job_id)
     if job is None:
+        return jsonify({'error': 'not found'}), 404
+    if job.get('client_id') != session.get('client_id'):
         return jsonify({'error': 'not found'}), 404
     # Trim results in JSON to avoid huge payload; send last 20
     results = job.get('results', [])

@@ -78,22 +78,23 @@
         <h2>📡 Bulk Job Status</h2>
         {% set processed = (success_count or 0) + (failed_count or 0) %}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 10px;">
-            <div class="stat-chip">Job ID: {{ job.id }}</div>
-            <div class="stat-chip">Status: {{ job.status }}</div>
-            <div class="stat-chip">Message: {{ job.message }}</div>
-            <div class="stat-chip">Total: {{ job.total }}</div>
-            <div class="stat-chip">Success: {{ success_count or 0 }}</div>
-            <div class="stat-chip">Failed: {{ failed_count or 0 }}</div>
+            <div class="stat-chip">Job ID: <span id="bulkJobId">{{ job.id }}</span></div>
+            <div class="stat-chip">Status: <span id="bulkJobStatus">{{ job.status }}</span></div>
+            <div class="stat-chip">Message: <span id="bulkJobMessage">{{ job.message }}</span></div>
+            <div class="stat-chip">Total: <span id="bulkJobTotal">{{ job.total }}</span></div>
+            <div class="stat-chip">Success: <span id="bulkJobSuccess">{{ success_count or 0 }}</span></div>
+            <div class="stat-chip">Failed: <span id="bulkJobFailed">{{ failed_count or 0 }}</span></div>
         </div>
         <div style="margin-top: 10px;">
             <div style="display:flex; justify-content: space-between; font-size: 0.95em; color: #374151; margin-bottom: 6px;">
-                <div>Processed: {{ processed }} / {{ job.total }}</div>
-                <div>{% if job.total and job.total > 0 %}{{ ((processed / job.total) * 100) | round(1) }}%{% else %}0%{% endif %}</div>
+                <div id="bulkProcessedText">Processed: {{ processed }} / {{ job.total }}</div>
+                <div id="bulkPercentText">{% if job.total and job.total > 0 %}{{ ((processed / job.total) * 100) | round(1) }}%{% else %}0%{% endif %}</div>
             </div>
             <div style="height: 10px; background: #e5e7eb; border-radius: 999px; overflow: hidden;">
                 <div id="bulkProgressBar" style="height: 10px; width: {% if job.total and job.total > 0 %}{{ ((processed / job.total) * 100) }}{% else %}0{% endif %}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
             </div>
         </div>
+        <div id="bulkLastUpdated" style="margin-top: 8px; color: #6b7280; font-size: 0.9em;"></div>
         {% if bulk_in_progress %}
         <div style="margin-top: 6px; color: #6b7280;">Auto-refreshing every 2s…</div>
         {% endif %}
@@ -248,20 +249,67 @@
 const jobId = "{{ job.id }}";
 const statusUrl = `/bulk-status/${jobId}/json`;
 const terminal = new Set(['completed', 'failed', 'cancelled']);
+
+function escapeHtml(s) {
+    return String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
 async function pollJob(){
     try {
         const res = await fetch(statusUrl);
         if(!res.ok) return;
         const data = await res.json();
         if(data.status){
-            const statusEl = document.querySelector('.stat-chip:nth-child(2)');
-            if(statusEl) statusEl.textContent = `Status: ${data.status}`;
-            const msgEl = document.querySelector('.stat-chip:nth-child(3)');
-            if(msgEl) msgEl.textContent = `Message: ${data.message || ''}`;
-            const succEl = document.querySelector('.stat-chip:nth-child(5)');
-            if(succEl) succEl.textContent = `Success: ${data.success_count || 0}`;
-            const failEl = document.querySelector('.stat-chip:nth-child(6)');
-            if(failEl) failEl.textContent = `Failed: ${data.failed_count || 0}`;
+            const statusEl = document.getElementById('bulkJobStatus');
+            if(statusEl) statusEl.textContent = data.status;
+            const msgEl = document.getElementById('bulkJobMessage');
+            if(msgEl) msgEl.textContent = data.message || '';
+            const succEl = document.getElementById('bulkJobSuccess');
+            if(succEl) succEl.textContent = String(data.success_count || 0);
+            const failEl = document.getElementById('bulkJobFailed');
+            if(failEl) failEl.textContent = String(data.failed_count || 0);
+
+            const total = Number(data.total || 0);
+            const processed = Number((data.success_count || 0) + (data.failed_count || 0));
+            const pct = total > 0 ? (processed / total) * 100 : 0;
+            const processedText = document.getElementById('bulkProcessedText');
+            if(processedText) processedText.textContent = `Processed: ${processed} / ${total}`;
+            const pctText = document.getElementById('bulkPercentText');
+            if(pctText) pctText.textContent = `${pct.toFixed(1)}%`;
+            const bar = document.getElementById('bulkProgressBar');
+            if(bar) bar.style.width = `${pct}%`;
+
+            const lastUpdated = document.getElementById('bulkLastUpdated');
+            if(lastUpdated) lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+
+            // Show last ~20 results live (from JSON)
+            if(Array.isArray(data.results)){
+                const tableBody = document.querySelector('tbody');
+                // Only update if the results table exists on the page
+                if(tableBody){
+                    const rows = data.results.map(r => {
+                        const ok = r.status === 'Success';
+                        const badge = ok
+                            ? '<span style="background: #38ef7d; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;">✓ Success</span>'
+                            : '<span style="background: #ff6a00; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;">✗ Failed</span>';
+                        return `
+                            <tr style="border-bottom: 1px solid #e0e0e0;">
+                                <td style="padding: 12px;">${escapeHtml(r.row)}</td>
+                                <td style="padding: 12px; font-weight: bold;">${escapeHtml(r.symbol)}</td>
+                                <td style="padding: 12px;">${badge}</td>
+                                <td style="padding: 12px; font-family: monospace;">${escapeHtml(r.order_id || 'N/A')}</td>
+                                <td style="padding: 12px; font-size: 0.9em;">${escapeHtml(r.message || '')}</td>
+                            </tr>`;
+                    }).join('');
+                    tableBody.innerHTML = rows;
+                }
+            }
+
             if(terminal.has(data.status)){
                 clearInterval(pollHandle);
                 window.location.reload();
@@ -271,6 +319,7 @@ async function pollJob(){
         console.warn('Polling error', e);
     }
 }
+pollJob();
 const pollHandle = setInterval(pollJob, 2000);
 </script>
 {% endif %}

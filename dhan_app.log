@@ -2,3 +2,22 @@
 2025-12-17 21:55:51,243 - INFO - Dhan Super Order - Web Application
 2025-12-17 21:55:51,243 - INFO - ============================================================
 2025-12-17 21:55:51,271 - INFO - Logs being written to: dhan_app.log
+2025-12-22 20:21:52,759 - INFO - ============================================================
+2025-12-22 20:21:52,759 - INFO - Dhan Super Order - Web Application
+2025-12-22 20:21:52,759 - INFO - ============================================================
+2025-12-22 20:21:52,807 - INFO - Logs being written to: dhan_app.log
+2025-12-22 20:23:57,226 - INFO - Bulk job 7061ce60-5ca9-408a-bd21-72581e110630: Placing SUPER row=2 symbol=SENSEX 18 DEC 85000 PUT ex=BFO qty=60
+2025-12-22 20:23:57,226 - INFO - Bulk job 7061ce60-5ca9-408a-bd21-72581e110630: Placing SUPER row=3 symbol=SENSEX 18 DEC 84900 PUT ex=BFO qty=60
+2025-12-22 20:23:57,226 - INFO - Bulk job 7061ce60-5ca9-408a-bd21-72581e110630: Placing SUPER row=4 symbol=SENSEX 18 DEC 84800 PUT ex=BFO qty=60
+2025-12-22 20:23:57,231 - INFO - Bulk job 7061ce60-5ca9-408a-bd21-72581e110630: Placing SUPER row=5 symbol=SENSEX 18 DEC 84700 PUT ex=BFO qty=60
+2025-12-22 20:23:57,231 - INFO - Bulk job 7061ce60-5ca9-408a-bd21-72581e110630: Placing SUPER row=6 symbol=SENSEX 18 DEC 84600 PUT ex=BFO qty=60
+2025-12-22 20:25:21,358 - INFO - Bulk job b3fd3070-02b9-4dd5-b7b4-9907cf54b6aa: Placing SUPER row=2 symbol=SENSEX 18 DEC 85000 PUT ex=BFO qty=60
+2025-12-22 20:25:21,361 - INFO - Bulk job b3fd3070-02b9-4dd5-b7b4-9907cf54b6aa: Placing SUPER row=3 symbol=SENSEX 18 DEC 84900 PUT ex=BFO qty=60
+2025-12-22 20:25:21,364 - INFO - Bulk job b3fd3070-02b9-4dd5-b7b4-9907cf54b6aa: Placing SUPER row=4 symbol=SENSEX 18 DEC 84800 PUT ex=BFO qty=60
+2025-12-22 20:25:21,368 - INFO - Bulk job b3fd3070-02b9-4dd5-b7b4-9907cf54b6aa: Placing SUPER row=5 symbol=SENSEX 18 DEC 84700 PUT ex=BFO qty=60
+2025-12-22 20:25:21,370 - INFO - Bulk job b3fd3070-02b9-4dd5-b7b4-9907cf54b6aa: Placing SUPER row=6 symbol=SENSEX 18 DEC 84600 PUT ex=BFO qty=60
+2025-12-22 20:26:44,416 - INFO - Bulk job 4c51dc1b-2e35-4d95-a1b4-9b7811beec07: Placing SUPER row=2 symbol=SENSEX 18 DEC 85000 PUT ex=BFO qty=60
+2025-12-22 20:26:44,420 - INFO - Bulk job 4c51dc1b-2e35-4d95-a1b4-9b7811beec07: Placing SUPER row=3 symbol=SENSEX 18 DEC 84900 PUT ex=BFO qty=60
+2025-12-22 20:26:44,421 - INFO - Bulk job 4c51dc1b-2e35-4d95-a1b4-9b7811beec07: Placing SUPER row=4 symbol=SENSEX 18 DEC 84800 PUT ex=BFO qty=60
+2025-12-22 20:26:44,423 - INFO - Bulk job 4c51dc1b-2e35-4d95-a1b4-9b7811beec07: Placing SUPER row=5 symbol=SENSEX 18 DEC 84700 PUT ex=BFO qty=60
+2025-12-22 20:26:44,424 - INFO - Bulk job 4c51dc1b-2e35-4d95-a1b4-9b7811beec07: Placing SUPER row=6 symbol=SENSEX 18 DEC 84600 PUT ex=BFO qty=60
