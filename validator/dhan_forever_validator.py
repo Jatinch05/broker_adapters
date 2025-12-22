@@ -65,7 +65,7 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("product")
     def validate_product(cls, v: str):
         v = v.strip().upper()
-        if v not in {"CNC", "MTF"}:
+        if v not in {"CNC", "MTF", ""}:
             raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF")
         return v
 
@@ -85,7 +85,7 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("order_flag")
     def validate_flag(cls, v: str):
         v = v.strip().upper()
-        if v not in {"SINGLE", "OCO"}:
+        if v not in {"SINGLE", "OCO" , "NORMAL"}:
             raise ValueError("order_flag must be SINGLE or OCO")
         return v
 
