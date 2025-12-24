@@ -86,9 +86,9 @@ class DhanSuperOrderOrchestrator:
             
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"Order placement attempt: symbol={intent.symbol}, exchange={intent.exchange}")
+            logger.debug(f"Order placement attempt: symbol={intent.symbol}, exchange={intent.exchange}")
             if strike_price or expiry_date or option_type:
-                logger.info(f"Advanced lookup: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
+                logger.debug(f"Advanced lookup: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
             
             if strike_price is not None or expiry_date is not None or option_type is not None:
                 # Use advanced lookup for symbols like BSXOPT
@@ -99,17 +99,17 @@ class DhanSuperOrderOrchestrator:
                     option_type=option_type
                 )
                 if instrument:
-                    logger.info(f"Advanced lookup found: {instrument.symbol}, security_id={instrument.security_id}")
+                    logger.debug(f"Advanced lookup found: {instrument.symbol}, security_id={instrument.security_id}")
                 else:
-                    logger.warning(f"Advanced lookup failed: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
+                    logger.debug(f"Advanced lookup failed: symbol={intent.symbol}, strike={strike_price}, expiry={expiry_date}, option={option_type}")
             else:
                 # Standard lookup by symbol only
-                logger.info(f"Standard lookup: symbol={intent.symbol}")
+                logger.debug(f"Standard lookup: symbol={intent.symbol}")
                 instrument = DhanStore.lookup_symbol(intent.symbol)
                 if instrument:
-                    logger.info(f"Standard lookup found: {instrument.symbol}, security_id={instrument.security_id}")
+                    logger.debug(f"Standard lookup found: {instrument.symbol}, security_id={instrument.security_id}")
                 else:
-                    logger.warning(f"Standard lookup failed for: {intent.symbol}")
+                    logger.debug(f"Standard lookup failed for: {intent.symbol}")
             
             if instrument is None:
                 raise DhanSuperOrderError(
@@ -126,6 +126,17 @@ class DhanSuperOrderOrchestrator:
                 "BFO": "BSE",
                 "BSE_FNO": "BSE",
                 "MCX": "MCX",
+            }
+
+            # Map user-selected exchange to Dhan API exchangeSegment.
+            api_segment_mapping = {
+                "NSE": "NSE_EQ",
+                "BSE": "BSE_EQ",
+                "NFO": "NSE_FNO",
+                "NSE_FNO": "NSE_FNO",
+                "BFO": "BSE_FNO",
+                "BSE_FNO": "BSE_FNO",
+                "MCX": "MCX_COMM",
             }
 
             expected_segment = exchange_mapping.get(intent.exchange)
@@ -151,8 +162,7 @@ class DhanSuperOrderOrchestrator:
             result = place_dhan_super_order(
                 intent=intent,
                 security_id=instrument.security_id,
-                # Use user-selected exchange for API call (required by Dhan). Instrument exchange is used only for validation above.
-                exchange_segment=intent.exchange,
+                exchange_segment=api_segment_mapping.get(intent.exchange, intent.exchange),
                 client_id=self.client_id,
                 access_token=self.access_token,
             )

@@ -25,3 +25,156 @@
 2025-12-22 20:38:15,471 - INFO - Dhan Super Order - Web Application
 2025-12-22 20:38:15,471 - INFO - ============================================================
 2025-12-22 20:38:15,479 - INFO - Logs being written to: dhan_app.log
+2025-12-22 20:49:55,782 - INFO - ============================================================
+2025-12-22 20:49:55,782 - INFO - Dhan Super Order - Web Application
+2025-12-22 20:49:55,783 - INFO - ============================================================
+2025-12-22 20:49:55,791 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:08:16,370 - INFO - ============================================================
+2025-12-22 21:08:16,370 - INFO - Dhan Super Order - Web Application
+2025-12-22 21:08:16,370 - INFO - ============================================================
+2025-12-22 21:08:16,381 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:08:59,110 - INFO - Bulk job ef401358-a995-4e66-ba98-8f5f135f9af9: prefetch completed in 0.000s
+2025-12-22 21:17:30,853 - INFO - ============================================================
+2025-12-22 21:17:30,854 - INFO - Dhan Super Order - Web Application
+2025-12-22 21:17:30,854 - INFO - ============================================================
+2025-12-22 21:17:30,854 - INFO - 
+Starting server...
+2025-12-22 21:17:30,854 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-22 21:17:30,854 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-22 21:17:30,855 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:18:14,275 - INFO - Bulk job b4f63dea-2c1d-4890-973d-f19f5e749ef5: prefetch completed in 0.000s
+2025-12-22 21:18:14,278 - INFO - Bulk job b4f63dea-2c1d-4890-973d-f19f5e749ef5: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:18:40,143 - INFO - Bulk job 3ea9d702-52b0-4835-91fb-dbd933ace998: prefetch completed in 0.000s
+2025-12-22 21:18:40,145 - INFO - Bulk job 3ea9d702-52b0-4835-91fb-dbd933ace998: perf avg_row=0.0s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:18:54,713 - INFO - Bulk job 3c1ee4d7-aa57-4472-84c7-3894e49b79b9: prefetch completed in 0.000s
+2025-12-22 21:18:54,715 - INFO - Bulk job 3c1ee4d7-aa57-4472-84c7-3894e49b79b9: perf avg_row=0.0s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:27:06,550 - INFO - ============================================================
+2025-12-22 21:27:06,550 - INFO - Dhan Super Order - Web Application
+2025-12-22 21:27:06,550 - INFO - ============================================================
+2025-12-22 21:27:06,550 - INFO - 
+Starting server...
+2025-12-22 21:27:06,550 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-22 21:27:06,550 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-22 21:27:06,557 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:27:47,316 - INFO - Bulk job e29ebcd1-9cbb-48c1-a0e9-24640eeea429: prefetch completed in 0.000s
+2025-12-22 21:27:47,327 - INFO - Bulk job e29ebcd1-9cbb-48c1-a0e9-24640eeea429: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:28:14,957 - INFO - Bulk job ee1a1536-b5bf-420f-968d-9d354318924c: prefetch completed in 0.000s
+2025-12-22 21:28:14,959 - INFO - Bulk job ee1a1536-b5bf-420f-968d-9d354318924c: perf avg_row=0.0s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:35:10,525 - INFO - ============================================================
+2025-12-22 21:35:10,528 - INFO - Dhan Super Order - Web Application
+2025-12-22 21:35:10,528 - INFO - ============================================================
+2025-12-22 21:35:10,529 - INFO - 
+Starting server...
+2025-12-22 21:35:10,529 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-22 21:35:10,529 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-22 21:35:10,529 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:36:05,443 - INFO - Bulk job f15bd143-e650-4870-a62e-fb0ed43d9ef3: prefetch completed in 0.000s
+2025-12-22 21:36:05,494 - INFO - Bulk job f15bd143-e650-4870-a62e-fb0ed43d9ef3: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:36:05,925 - INFO - Bulk job 3093050e-fada-431e-a9d7-3ad786db6098: prefetch completed in 0.000s
+2025-12-22 21:36:05,932 - INFO - Bulk job 3093050e-fada-431e-a9d7-3ad786db6098: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:36:15,311 - INFO - Bulk job 77054a17-7279-4ca0-a0e5-c762dac20700: prefetch completed in 0.000s
+2025-12-22 21:36:15,313 - INFO - Bulk job 77054a17-7279-4ca0-a0e5-c762dac20700: perf avg_row=0.0s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-22 21:44:40,666 - INFO - ============================================================
+2025-12-22 21:44:40,666 - INFO - Dhan Super Order - Web Application
+2025-12-22 21:44:40,666 - INFO - ============================================================
+2025-12-22 21:44:40,666 - INFO - 
+Starting server...
+2025-12-22 21:44:40,666 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-22 21:44:40,666 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-22 21:44:40,666 - INFO - Logs being written to: dhan_app.log
+2025-12-22 21:45:13,062 - INFO - Bulk job 1ce2dd2a-8348-4e50-a04f-87fa23a6922b: prefetch completed in 0.000s
+2025-12-22 21:45:13,062 - INFO - Bulk job 1ce2dd2a-8348-4e50-a04f-87fa23a6922b: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:32:58,713 - INFO - ============================================================
+2025-12-24 17:32:58,715 - INFO - Dhan Super Order - Web Application
+2025-12-24 17:32:58,715 - INFO - ============================================================
+2025-12-24 17:32:58,715 - INFO - 
+Starting server...
+2025-12-24 17:32:58,715 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-24 17:32:58,716 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-24 17:32:58,716 - INFO - Logs being written to: dhan_app.log
+2025-12-24 17:34:38,817 - INFO - Bulk job afb6ee0d-b131-4217-9b5c-4a4ad50ec408: prefetch completed in 0.000s
+2025-12-24 17:34:38,819 - INFO - Bulk job afb6ee0d-b131-4217-9b5c-4a4ad50ec408: perf avg_row=0.0002s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:35:08,423 - INFO - Bulk job 94a57e0e-a1a6-4ac5-add9-ebd028467f08: prefetch completed in 0.000s
+2025-12-24 17:35:08,428 - INFO - Bulk job 94a57e0e-a1a6-4ac5-add9-ebd028467f08: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:41:05,038 - INFO - Bulk job f2d90148-714a-4ace-b544-609b45a30bb0: prefetch completed in 0.000s
+2025-12-24 17:41:05,041 - INFO - Bulk job f2d90148-714a-4ace-b544-609b45a30bb0: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:41:40,640 - INFO - Bulk job 4959c6cc-15b8-46a8-adc8-e68cb7385f88: prefetch completed in 0.000s
+2025-12-24 17:41:40,643 - INFO - Bulk job 4959c6cc-15b8-46a8-adc8-e68cb7385f88: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:42:08,140 - INFO - Bulk job 71562aba-5dc4-45ff-812e-6c6c2cd988d1: prefetch completed in 0.000s
+2025-12-24 17:42:08,145 - INFO - Bulk job 71562aba-5dc4-45ff-812e-6c6c2cd988d1: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:42:20,470 - INFO - Bulk job ee743324-a97a-4568-aa25-6cf5d9ce2422: prefetch completed in 0.000s
+2025-12-24 17:42:20,476 - INFO - Bulk job ee743324-a97a-4568-aa25-6cf5d9ce2422: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:42:35,674 - INFO - ============================================================
+2025-12-24 17:42:35,674 - INFO - Dhan Super Order - Web Application
+2025-12-24 17:42:35,675 - INFO - ============================================================
+2025-12-24 17:42:35,675 - INFO - 
+Starting server...
+2025-12-24 17:42:35,675 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-24 17:42:35,677 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-24 17:42:35,677 - INFO - Logs being written to: dhan_app.log
+2025-12-24 17:43:18,485 - INFO - Bulk job b648df7f-f7a3-4459-83ee-9f08b6b8eae3: prefetch completed in 0.000s
+2025-12-24 17:43:18,494 - INFO - Bulk job b648df7f-f7a3-4459-83ee-9f08b6b8eae3: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 17:43:37,362 - INFO - Bulk job be950df9-2767-47ab-a5eb-03ad2a53f05d: prefetch completed in 0.000s
+2025-12-24 17:43:37,366 - INFO - Bulk job be950df9-2767-47ab-a5eb-03ad2a53f05d: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:02:13,015 - INFO - ============================================================
+2025-12-24 18:02:13,015 - INFO - Dhan Super Order - Web Application
+2025-12-24 18:02:13,016 - INFO - ============================================================
+2025-12-24 18:02:13,016 - INFO - 
+Starting server...
+2025-12-24 18:02:13,016 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-24 18:02:13,017 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-24 18:02:13,017 - INFO - Logs being written to: dhan_app.log
+2025-12-24 18:03:39,418 - INFO - Bulk job 84d62362-c190-465d-a030-7db5b47173d9: prefetch completed in 0.000s
+2025-12-24 18:03:39,423 - INFO - Bulk job 84d62362-c190-465d-a030-7db5b47173d9: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:04:06,616 - INFO - Bulk job 3d6cf9f6-f10e-4e80-b9d7-ac5b4ec673b4: prefetch completed in 0.000s
+2025-12-24 18:04:06,621 - INFO - Bulk job 3d6cf9f6-f10e-4e80-b9d7-ac5b4ec673b4: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:15:08,823 - INFO - ============================================================
+2025-12-24 18:15:08,824 - INFO - Dhan Super Order - Web Application
+2025-12-24 18:15:08,824 - INFO - ============================================================
+2025-12-24 18:15:08,824 - INFO - 
+Starting server...
+2025-12-24 18:15:08,825 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-24 18:15:08,825 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-24 18:15:08,825 - INFO - Logs being written to: dhan_app.log
+2025-12-24 18:15:53,275 - INFO - Bulk job 0166fcca-be74-4a9f-9258-c4e83ef792a0: prefetch completed in 0.000s
+2025-12-24 18:15:53,277 - INFO - Bulk job 0166fcca-be74-4a9f-9258-c4e83ef792a0: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:16:06,667 - INFO - Bulk job c8bd49bc-527d-45dd-914b-9926b307ee98: prefetch completed in 0.000s
+2025-12-24 18:16:06,673 - INFO - Bulk job c8bd49bc-527d-45dd-914b-9926b307ee98: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:21:05,214 - INFO - ============================================================
+2025-12-24 18:21:05,214 - INFO - Dhan Super Order - Web Application
+2025-12-24 18:21:05,215 - INFO - ============================================================
+2025-12-24 18:21:05,215 - INFO - 
+Starting server...
+2025-12-24 18:21:05,215 - INFO - Open your browser and go to: http://localhost:5000
+2025-12-24 18:21:05,215 - INFO - 
+Press Ctrl+C to stop the server
+
+2025-12-24 18:21:05,215 - INFO - Logs being written to: dhan_app.log
+2025-12-24 18:21:51,301 - INFO - Bulk job 56c49023-c231-4da0-abca-e49b152f8840: prefetch completed in 0.000s
+2025-12-24 18:21:51,303 - INFO - Bulk job 56c49023-c231-4da0-abca-e49b152f8840: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:21:51,304 - INFO - Bulk job 56c49023-c231-4da0-abca-e49b152f8840: done status=completed total=5 success=0 failed=5 results_len=5
+2025-12-24 18:22:32,083 - INFO - Bulk job c1599dbb-705b-4add-bd28-78af3101df85: prefetch completed in 0.000s
+2025-12-24 18:22:32,088 - INFO - Bulk job c1599dbb-705b-4add-bd28-78af3101df85: perf avg_row=0.0001s avg_api=0.0001s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:22:32,089 - INFO - Bulk job c1599dbb-705b-4add-bd28-78af3101df85: done status=completed total=5 success=0 failed=5 results_len=5
+2025-12-24 18:24:50,778 - INFO - Bulk job a86411f4-1299-4dd0-b0d9-17c10e417295: prefetch completed in 0.000s
+2025-12-24 18:24:50,781 - INFO - Bulk job a86411f4-1299-4dd0-b0d9-17c10e417295: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:24:50,782 - INFO - Bulk job a86411f4-1299-4dd0-b0d9-17c10e417295: done status=completed total=5 success=0 failed=5 results_len=5
+2025-12-24 18:25:21,651 - INFO - Bulk job 442aac54-d1fa-4ce6-8f41-49d26df6c9ba: prefetch completed in 0.000s
+2025-12-24 18:25:21,655 - INFO - Bulk job 442aac54-d1fa-4ce6-8f41-49d26df6c9ba: perf avg_row=0.0001s avg_api=0.0s avg_rate_wait=0.0s avg_build=0.0s
+2025-12-24 18:25:21,656 - INFO - Bulk job 442aac54-d1fa-4ce6-8f41-49d26df6c9ba: done status=completed total=4 success=0 failed=4 results_len=4

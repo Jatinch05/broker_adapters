@@ -56,17 +56,22 @@
         {% endif %}
         <form method="POST" action="{{ url_for('bulk_upload') }}" enctype="multipart/form-data">
             <div class="form-group">
-                <label for="file">Select File (.xlsx, .xls, .csv)</label>
-                <input type="file" id="file" name="file" accept=".xlsx,.xls,.csv" required 
+                  <label for="bulkFileInput">Select File (.xlsx, .xls, .csv)</label>
+                <input type="file" id="bulkFileInput" name="file" accept=".xlsx,.xls,.csv" required {% if bulk_in_progress %}disabled{% endif %}
                        style="width: 100%; padding: 10px; border: 2px dashed #667eea; border-radius: 8px; background: #f8f9fa;">
             </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; padding: 15px; font-size: 1.1em;">
+            <button id="bulkUploadBtn" type="submit" class="btn btn-primary" style="width: 100%; padding: 15px; font-size: 1.1em;" {% if bulk_in_progress %}disabled{% endif %}>
                 🚀 Upload and Place Orders
             </button>
         </form>
         {% if bulk_in_progress and job %}
-        <form method="POST" action="{{ url_for('bulk_cancel', job_id=job.id) }}" style="margin-top: 12px;">
-            <button type="submit" class="btn btn-secondary" style="width: 100%; padding: 12px;">
+        <div id="bulkUploadDisabledHint" style="margin-top: 10px; color: #6b7280; font-size: 0.95em;">
+            Upload is disabled while job {{ job.id }} is {{ job.status }}.
+        </div>
+        {% endif %}
+        {% if bulk_in_progress and job %}
+        <form id="bulkCancelForm" method="POST" action="{{ url_for('bulk_cancel', job_id=job.id) }}" style="margin-top: 12px;">
+            <button id="bulkCancelBtn" type="submit" class="btn btn-secondary" style="width: 100%; padding: 12px;">
                 🛑 Cancel Running Bulk
             </button>
         </form>
@@ -84,6 +89,16 @@
             <div class="stat-chip">Total: <span id="bulkJobTotal">{{ job.total }}</span></div>
             <div class="stat-chip">Success: <span id="bulkJobSuccess">{{ success_count or 0 }}</span></div>
             <div class="stat-chip">Failed: <span id="bulkJobFailed">{{ failed_count or 0 }}</span></div>
+            {% if job.perf %}
+            <div class="stat-chip">
+                Prefetch: {{ job.perf.prefetch_s if job.perf.prefetch_s is not none else '-' }}s
+            </div>
+            <div class="stat-chip">
+                Avg/Order: build {{ job.perf.avg_build_s if job.perf.avg_build_s is not none else '-' }}s,
+                wait {{ job.perf.avg_rate_wait_s if job.perf.avg_rate_wait_s is not none else '-' }}s,
+                api {{ job.perf.avg_api_s if job.perf.avg_api_s is not none else '-' }}s
+            </div>
+            {% endif %}
         </div>
         <div style="margin-top: 10px;">
             <div style="display:flex; justify-content: space-between; font-size: 0.95em; color: #374151; margin-bottom: 6px;">
@@ -95,30 +110,38 @@
             </div>
         </div>
         <div id="bulkLastUpdated" style="margin-top: 8px; color: #6b7280; font-size: 0.9em;"></div>
-        {% if bulk_in_progress %}
-        <div style="margin-top: 6px; color: #6b7280;">Auto-refreshing every 2s…</div>
-        {% endif %}
+        <div id="bulkAutoRefreshHint" style="margin-top: 6px; color: #6b7280; {% if not bulk_in_progress %}display:none;{% endif %}">Auto-refreshing every 2s…</div>
     </div>
     {% endif %}
 
     <!-- Results Section -->
-    {% if results %}
+    {% if job %}
     <div class="card">
         <h2>📈 Upload Results</h2>
         <div style="display: flex; gap: 20px; margin-bottom: 20px;">
             <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; text-align: center;">
-                <div style="font-size: 2em; font-weight: bold;">{{ results|length }}</div>
+                <div id="bulkResultsTotal" style="font-size: 2em; font-weight: bold;">{{ results|length }}</div>
                 <div>Total Orders</div>
             </div>
             <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; border-radius: 8px; text-align: center;">
-                <div style="font-size: 2em; font-weight: bold;">{{ success_count }}</div>
+                <div id="bulkResultsSuccess" style="font-size: 2em; font-weight: bold;">{{ success_count }}</div>
                 <div>Successful</div>
             </div>
             <div style="flex: 1; padding: 15px; background: linear-gradient(135deg, #ee0979 0%, #ff6a00 100%); color: white; border-radius: 8px; text-align: center;">
-                <div style="font-size: 2em; font-weight: bold;">{{ failed_count }}</div>
+                <div id="bulkResultsFailed" style="font-size: 2em; font-weight: bold;">{{ failed_count }}</div>
                 <div>Failed</div>
             </div>
         </div>
+
+        {% if not results %}
+        <div style="margin: 10px 0 16px; color: #6b7280;">
+            {% if bulk_in_progress %}
+                Waiting for results… this table will fill as orders are processed.
+            {% else %}
+                No per-row results available for this job.
+            {% endif %}
+        </div>
+        {% endif %}
 
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">
@@ -131,7 +154,7 @@
                         <th style="padding: 12px; text-align: left;">Message</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="bulkResultsBody">
                     {% for result in results %}
                     <tr style="border-bottom: 1px solid #e0e0e0; {% if loop.index % 2 == 0 %}background: #f8f9fa;{% endif %}">
                         <td style="padding: 12px;">{{ result.row }}</td>
@@ -247,9 +270,17 @@
 {% if job %}
 <script>
 const jobId = "{{ job.id }}";
-const statusUrl = `/bulk-status/${jobId}/json`;
+const statusUrlBase = `/bulk-status/${jobId}/json`;
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 let didHardReload = false;
+
+// If the browser restores this page from back/forward cache, force a reload
+// so we don't keep showing results from an older job.
+window.addEventListener('pageshow', (evt) => {
+    if (evt.persisted) window.location.reload();
+});
+
+// Note: Do not clear server-rendered results here.
 
 function escapeHtml(s) {
     return String(s)
@@ -262,7 +293,7 @@ function escapeHtml(s) {
 
 async function pollJob(){
     try {
-        const res = await fetch(statusUrl);
+        const res = await fetch(`${statusUrlBase}?t=${Date.now()}`, { cache: 'no-store' });
         if(res.status === 404 && !didHardReload){
             didHardReload = true;
             window.location.reload();
@@ -271,6 +302,14 @@ async function pollJob(){
         if(!res.ok) return;
         const data = await res.json();
         if(data.status){
+            // Safety: if server returns a different job id, reload.
+            if (data.id && String(data.id) !== String(jobId)) {
+                window.location.reload();
+                return;
+            }
+            const idEl = document.getElementById('bulkJobId');
+            if(idEl) idEl.textContent = String(data.id || jobId);
+
             const statusEl = document.getElementById('bulkJobStatus');
             if(statusEl) statusEl.textContent = data.status;
             const msgEl = document.getElementById('bulkJobMessage');
@@ -279,6 +318,14 @@ async function pollJob(){
             if(succEl) succEl.textContent = String(data.success_count || 0);
             const failEl = document.getElementById('bulkJobFailed');
             if(failEl) failEl.textContent = String(data.failed_count || 0);
+
+            // Keep results summary chips in sync too
+            const resultsTotalEl = document.getElementById('bulkResultsTotal');
+            if(resultsTotalEl) resultsTotalEl.textContent = String((data.success_count || 0) + (data.failed_count || 0));
+            const resultsSuccEl = document.getElementById('bulkResultsSuccess');
+            if(resultsSuccEl) resultsSuccEl.textContent = String(data.success_count || 0);
+            const resultsFailEl = document.getElementById('bulkResultsFailed');
+            if(resultsFailEl) resultsFailEl.textContent = String(data.failed_count || 0);
 
             const total = Number(data.total || 0);
             const processed = Number((data.success_count || 0) + (data.failed_count || 0));
@@ -293,10 +340,33 @@ async function pollJob(){
             const lastUpdated = document.getElementById('bulkLastUpdated');
             if(lastUpdated) lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
 
+            // Toggle the "auto refreshing" hint based on the polled status
+            const hint = document.getElementById('bulkAutoRefreshHint');
+            if(hint){
+                hint.style.display = terminal.has(data.status) ? 'none' : '';
+            }
+
+            // Update perf chips if present
+            if(data.perf){
+                const chips = document.querySelectorAll('.stat-chip');
+                for(const chip of chips){
+                    const txt = chip.textContent || '';
+                    if(txt.trim().startsWith('Prefetch:')){
+                        const v = (data.perf.prefetch_s === null || data.perf.prefetch_s === undefined) ? '-' : data.perf.prefetch_s;
+                        chip.textContent = `Prefetch: ${v}s`;
+                    }
+                    if(txt.includes('Avg/Order: build')){
+                        const b = (data.perf.avg_build_s === null || data.perf.avg_build_s === undefined) ? '-' : data.perf.avg_build_s;
+                        const w = (data.perf.avg_rate_wait_s === null || data.perf.avg_rate_wait_s === undefined) ? '-' : data.perf.avg_rate_wait_s;
+                        const a = (data.perf.avg_api_s === null || data.perf.avg_api_s === undefined) ? '-' : data.perf.avg_api_s;
+                        chip.textContent = `Avg/Order: build ${b}s, wait ${w}s, api ${a}s`;
+                    }
+                }
+            }
+
             // Show last ~20 results live (from JSON)
             if(Array.isArray(data.results)){
-                const tableBody = document.querySelector('tbody');
-                // Only update if the results table exists on the page
+                const tableBody = document.getElementById('bulkResultsBody');
                 if(tableBody){
                     const rows = data.results.map(r => {
                         const ok = r.status === 'Success';
@@ -317,16 +387,31 @@ async function pollJob(){
             }
 
             if(terminal.has(data.status)){
-                clearInterval(pollHandle);
-                window.location.reload();
+                // Job is finished; stop polling (avoid flicker / infinite reload loops)
+                if (pollHandle) clearInterval(pollHandle);
+
+                // Re-enable upload UI now that the job is finished
+                const fileInput = document.getElementById('bulkFileInput');
+                if(fileInput) fileInput.disabled = false;
+                const uploadBtn = document.getElementById('bulkUploadBtn');
+                if(uploadBtn) uploadBtn.disabled = false;
+                const uploadHint = document.getElementById('bulkUploadDisabledHint');
+                if(uploadHint) uploadHint.style.display = 'none';
+
+                // Hide cancel UI once job is finished
+                const cancelForm = document.getElementById('bulkCancelForm');
+                if(cancelForm) cancelForm.style.display = 'none';
             }
         }
     } catch(e){
         console.warn('Polling error', e);
     }
 }
+let pollHandle = null;
+// Always fetch once to hydrate final results (important in multi-process setups).
 pollJob();
-const pollHandle = setInterval(pollJob, 2000);
+// Always start polling; stop as soon as the polled status is terminal.
+pollHandle = setInterval(pollJob, 2000);
 </script>
 {% endif %}
 {% endblock %}

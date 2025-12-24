@@ -71,6 +71,7 @@ class DhanForeverOrderOrchestrator:
                 "NSE_FNO": "NSE_FNO",
                 "BFO": "BSE_FNO",
                 "BSE_FNO": "BSE_FNO",
+                "MCX": "MCX_COMM",
             }
 
             expected_segment = base_validation_mapping.get(intent.exchange)

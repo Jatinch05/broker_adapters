@@ -4,7 +4,7 @@ Dhan Super Order - Web Application
 A Flask-based web interface for placing Dhan Super Orders.
 Users can manage credentials and place orders through a browser.
 """
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, make_response
 from functools import wraps
 import os
 from datetime import datetime, timedelta
@@ -14,7 +14,6 @@ import logging
 import time
 import threading
 import uuid
-import json
 from orchestrator.super_order import DhanSuperOrderOrchestrator, DhanSuperOrderError
 from orchestrator.forever import DhanForeverOrderOrchestrator, DhanForeverOrderError
 from validator.instruments.dhan_store import DhanStore
@@ -64,36 +63,11 @@ rate_limit_timestamps = []
 bulk_jobs = {}
 bulk_jobs_lock = threading.Lock()
 
-# File-backed snapshots to survive multi-process servers (e.g., gunicorn workers).
-# This is not multi-instance safe, but it fixes "status not updating" when requests
-# get routed to a different process.
-BULK_JOBS_DIR = os.path.join(app.config['UPLOAD_FOLDER'], 'bulk_jobs')
-os.makedirs(BULK_JOBS_DIR, exist_ok=True)
+"""Bulk jobs are intentionally in-memory only.
 
-
-def _bulk_job_path(job_id: str) -> str:
-    return os.path.join(BULK_JOBS_DIR, f"{job_id}.json")
-
-
-def _persist_job_snapshot(job_id: str, snap: dict) -> None:
-    path = _bulk_job_path(job_id)
-    tmp = f"{path}.tmp"
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(snap, f)
-    os.replace(tmp, path)
-
-
-def _load_job_snapshot(job_id: str):
-    path = _bulk_job_path(job_id)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
+Render (and similar platforms) have limited ephemeral disk; persisting per-job JSON
+snapshots can lead to storage growth. We keep only the current process' memory state.
+"""
 
 def rate_limit_wait():
     """Ensure we don't exceed Dhan's 25 orders/second rate limit"""
@@ -138,17 +112,22 @@ def create_bulk_job(df: pd.DataFrame, client_id: str, access_token: str) -> str:
         'started_at': None,
         'finished_at': None,
         'error': None,
+        'perf': {
+            'prefetch_s': None,
+            'orders_seen': 0,
+            'build_s_total': 0.0,
+            'rate_wait_s_total': 0.0,
+            'api_s_total': 0.0,
+            'row_s_total': 0.0,
+            'avg_build_s': None,
+            'avg_rate_wait_s': None,
+            'avg_api_s': None,
+            'avg_row_s': None,
+        },
         'cancel_event': cancel_event,
     }
     with bulk_jobs_lock:
         bulk_jobs[job_id] = job
-
-    # Persist initial snapshot so other processes can serve status.
-    try:
-        snap = {k: v for k, v in job.items() if k != 'cancel_event'}
-        _persist_job_snapshot(job_id, snap)
-    except Exception as e:  # pragma: no cover
-        logger.warning(f"Bulk job {job_id}: snapshot persist warning: {e}")
     thread = threading.Thread(
         target=_run_bulk_job,
         args=(job_id, df.copy(), client_id, access_token, cancel_event),
@@ -178,6 +157,18 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
         # Warm instruments once to avoid repeated loads during the run
         try:
             DhanStore.load()
+            # Big speed-up in streaming mode: prefetch all symbols/contracts in one scan
+            prefetch_start = time.perf_counter()
+            try:
+                DhanStore.prefetch_bulk(df)
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"Bulk job {job_id}: prefetch warning: {e}")
+            prefetch_s = time.perf_counter() - prefetch_start
+            with bulk_jobs_lock:
+                job = bulk_jobs.get(job_id)
+                if job is not None:
+                    job['perf']['prefetch_s'] = round(prefetch_s, 4)
+            logger.info(f"Bulk job {job_id}: prefetch completed in {prefetch_s:.3f}s")
         except Exception as e:  # pragma: no cover
             logger.warning(f"Bulk job {job_id}: instrument load warning: {e}")
 
@@ -206,6 +197,7 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
 
         # Iterate efficiently (faster than iterrows)
         for index, row in enumerate(df.itertuples(index=False), start=0):
+            row_start = time.perf_counter()
             if cancel_event.is_set():
                 with bulk_jobs_lock:
                     job = bulk_jobs.get(job_id)
@@ -213,11 +205,6 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                         return
                     job['status'] = 'cancelled'
                     job['message'] = 'Cancelled by user'
-                    snap = {k: v for k, v in job.items() if k != 'cancel_event'}
-                try:
-                    _persist_job_snapshot(job_id, snap)
-                except Exception:  # pragma: no cover
-                    pass
                 break
 
             row_num = index + 2  # Excel row number (1-indexed + header)
@@ -229,6 +216,10 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 'order_id': None
             }
             try:
+                build_start = time.perf_counter()
+                build_s = 0.0
+                rate_s = 0.0
+                api_s = 0.0
                 # Validate required fields
                 row_symbol = getattr(row, 'Symbol', None)
                 if row_symbol is None or pd.isna(row_symbol) or not str(row_symbol).strip():
@@ -400,11 +391,26 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     logger.info(
                         f"Bulk job {job_id}: progress {row_num - 1}/{len(df)} (last={order_data['order_category']} {order_data['symbol']})"
                     )
+                build_s = time.perf_counter() - build_start
+
+                # Allow cancellation right before we call broker APIs
+                if cancel_event.is_set():
+                    raise RuntimeError("Cancelled")
+
+                rate_start = time.perf_counter()
                 rate_limit_wait()
-                if is_forever:
-                    response = orch_forever.place_forever_order(order_data)
-                else:
-                    response = orch_super.place_super_order(order_data)
+                rate_s = time.perf_counter() - rate_start
+
+                api_start = time.perf_counter()
+                try:
+                    if is_forever:
+                        response = orch_forever.place_forever_order(order_data)
+                    else:
+                        response = orch_super.place_super_order(order_data)
+                except Exception:
+                    api_s = time.perf_counter() - api_start
+                    raise
+                api_s = time.perf_counter() - api_start
 
                 order_record = {
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -434,6 +440,10 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     if job is None:
                         return
                     job['success_count'] += 1
+                    job['perf']['orders_seen'] += 1
+                    job['perf']['build_s_total'] += build_s
+                    job['perf']['rate_wait_s_total'] += rate_s
+                    job['perf']['api_s_total'] += api_s
             except ValueError as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Validation error: {str(e)}'
@@ -442,6 +452,9 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     if job is None:
                         return
                     job['failed_count'] += 1
+                    # Still track time even when validation fails (build cost)
+                    job['perf']['orders_seen'] += 1
+                    job['perf']['build_s_total'] += (time.perf_counter() - build_start)
             except (DhanSuperOrderError, DhanForeverOrderError) as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Order error: {str(e)}'
@@ -450,7 +463,20 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     if job is None:
                         return
                     job['failed_count'] += 1
+                    job['perf']['orders_seen'] += 1
+                    job['perf']['build_s_total'] += build_s
+                    job['perf']['rate_wait_s_total'] += rate_s
+                    job['perf']['api_s_total'] += api_s
             except Exception as e:
+                if str(e) == 'Cancelled':
+                    # Respect cancellation without counting as a failure
+                    with bulk_jobs_lock:
+                        job = bulk_jobs.get(job_id)
+                        if job is None:
+                            return
+                        job['status'] = 'cancelled'
+                        job['message'] = 'Cancelled by user'
+                    break
                 result['status'] = 'Failed'
                 result['message'] = f'Error: {str(e)}'
                 with bulk_jobs_lock:
@@ -458,6 +484,10 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     if job is None:
                         return
                     job['failed_count'] += 1
+                    job['perf']['orders_seen'] += 1
+                    job['perf']['build_s_total'] += build_s
+                    job['perf']['rate_wait_s_total'] += rate_s
+                    job['perf']['api_s_total'] += api_s
 
             with bulk_jobs_lock:
                 job = bulk_jobs.get(job_id)
@@ -465,18 +495,20 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     return
                 job['results'].append(result)
 
-                # Persist at most ~2x/sec to keep UI responsive without slowing the worker.
-                now = time.monotonic()
-                if now - last_persist >= 0.5:
-                    snap = {k: v for k, v in job.items() if k != 'cancel_event'}
-                    # Keep persisted results bounded to avoid huge files
-                    if isinstance(snap.get('results'), list) and len(snap['results']) > 200:
-                        snap['results'] = snap['results'][-200:]
-                    try:
-                        _persist_job_snapshot(job_id, snap)
-                    except Exception:  # pragma: no cover
-                        pass
-                    last_persist = now
+                # Track overall row time
+                row_s = time.perf_counter() - row_start
+                job['perf']['row_s_total'] += row_s
+
+                # Update averages for UI/diagnostics
+                seen = int(job['perf'].get('orders_seen') or 0)
+                if seen > 0:
+                    job['perf']['avg_build_s'] = round(job['perf']['build_s_total'] / seen, 4)
+                    job['perf']['avg_rate_wait_s'] = round(job['perf']['rate_wait_s_total'] / seen, 4)
+                    job['perf']['avg_api_s'] = round(job['perf']['api_s_total'] / seen, 4)
+                    job['perf']['avg_row_s'] = round(job['perf']['row_s_total'] / seen, 4)
+
+                # Keep last_persist variable (reserved if we later re-add throttled updates)
+                last_persist = last_persist
 
         with bulk_jobs_lock:
             job = bulk_jobs.get(job_id)
@@ -487,13 +519,24 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 job['message'] = 'Completed'
             job['finished_at'] = datetime.now().isoformat()
 
+            # Final averages
+            seen = int(job['perf'].get('orders_seen') or 0)
+            if seen > 0:
+                job['perf']['avg_build_s'] = round(job['perf']['build_s_total'] / seen, 4)
+                job['perf']['avg_rate_wait_s'] = round(job['perf']['rate_wait_s_total'] / seen, 4)
+                job['perf']['avg_api_s'] = round(job['perf']['api_s_total'] / seen, 4)
+                job['perf']['avg_row_s'] = round(job['perf']['row_s_total'] / seen, 4)
+
+            logger.info(
+                f"Bulk job {job_id}: perf avg_row={job['perf'].get('avg_row_s')}s avg_api={job['perf'].get('avg_api_s')}s avg_rate_wait={job['perf'].get('avg_rate_wait_s')}s avg_build={job['perf'].get('avg_build_s')}s"
+            )
+            logger.info(
+                f"Bulk job {job_id}: done status={job.get('status')} total={job.get('total')} success={job.get('success_count')} failed={job.get('failed_count')} results_len={len(job.get('results') or [])}"
+            )
+
             snap = {k: v for k, v in job.items() if k != 'cancel_event'}
             if isinstance(snap.get('results'), list) and len(snap['results']) > 200:
                 snap['results'] = snap['results'][-200:]
-        try:
-            _persist_job_snapshot(job_id, snap)
-        except Exception:  # pragma: no cover
-            pass
 
     except Exception as e:  # pragma: no cover
         with bulk_jobs_lock:
@@ -506,10 +549,6 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
             job['finished_at'] = datetime.now().isoformat()
 
             snap = {k: v for k, v in job.items() if k != 'cancel_event'}
-        try:
-            _persist_job_snapshot(job_id, snap)
-        except Exception:
-            pass
 
 
 
@@ -749,22 +788,35 @@ def validate_symbol(symbol):
 def bulk_upload():
     """Bulk order upload from Excel file"""
     if request.method == 'POST':
+        # Block new uploads while an existing job is still processing
+        existing_id = session.get('last_bulk_job_id')
+        if existing_id:
+            existing = _job_snapshot(existing_id)
+            if existing is not None and existing.get('client_id') == session.get('client_id'):
+                if existing.get('status') in ['pending', 'running', 'cancelling']:
+                    flash('A bulk job is already running. Please wait for it to finish (or cancel it) before uploading another file.', 'warning')
+                    return redirect(url_for('bulk_status', job_id=existing_id))
+
         # Check if file was uploaded
         if 'file' not in request.files:
             flash('No file uploaded.', 'error')
-            return redirect(request.url)
+            # Clear stale job pointer so UI doesn't look "stuck"
+            session.pop('last_bulk_job_id', None)
+            return redirect(url_for('bulk_upload'), code=303)
         
         file = request.files['file']
         
         # Check if file is selected
         if file.filename == '':
             flash('No file selected.', 'error')
-            return redirect(request.url)
+            session.pop('last_bulk_job_id', None)
+            return redirect(url_for('bulk_upload'), code=303)
         
         # Check if file type is allowed
         if not allowed_file(file.filename):
             flash('Invalid file type. Please upload Excel (.xlsx, .xls) or CSV file.', 'error')
-            return redirect(request.url)
+            session.pop('last_bulk_job_id', None)
+            return redirect(url_for('bulk_upload'), code=303)
         
         try:
             # Read the Excel/CSV file
@@ -781,35 +833,65 @@ def bulk_upload():
             
             if missing_columns:
                 flash(f'Missing required columns: {", ".join(missing_columns)}', 'error')
-                return render_template('bulk_upload.html', bulk_in_progress=False)
+                # Render a clean page; do not keep any stale job state.
+                session.pop('last_bulk_job_id', None)
+                resp = make_response(render_template(
+                    'bulk_upload.html',
+                    bulk_in_progress=False,
+                    job=None,
+                    results=[],
+                    success_count=0,
+                    failed_count=0,
+                ))
+                resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                resp.headers['Pragma'] = 'no-cache'
+                resp.headers['Expires'] = '0'
+                return resp
+
+            # If there was an older finished job, drop it from memory so the new run overrides results
+            old_id = session.get('last_bulk_job_id')
+            if old_id:
+                with bulk_jobs_lock:
+                    old_job = bulk_jobs.get(old_id)
+                    if old_job is not None and old_job.get('client_id') == session.get('client_id'):
+                        if old_job.get('status') not in ['pending', 'running', 'cancelling']:
+                            bulk_jobs.pop(old_id, None)
 
             # Start background job
             job_id = create_bulk_job(df, session['client_id'], session['access_token'])
             session['last_bulk_job_id'] = job_id
             flash(f'Started bulk upload. Job ID: {job_id}', 'info')
-            return redirect(url_for('bulk_status', job_id=job_id))
+            return redirect(url_for('bulk_status', job_id=job_id), code=303)
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
             logger.error(f'ERROR in bulk upload: {error_details}')
             flash(f'Error processing file: {str(e)}', 'error')
-            return redirect(request.url)
+            session.pop('last_bulk_job_id', None)
+            return redirect(url_for('bulk_upload'), code=303)
     
-    # GET request - show the upload form (resume last job if present)
+    # GET request - show the upload form.
+    # Only surface a job here if it is still running; finished jobs should not
+    # keep disabling the UI or showing stale results.
     job = None
     last_id = session.get('last_bulk_job_id')
     if last_id:
         snap = _job_snapshot(last_id)
         if snap is not None and snap.get('client_id') == session.get('client_id'):
-            job = snap
-    return render_template(
+            if snap.get('status') in ['pending', 'running', 'cancelling']:
+                job = snap
+    resp = make_response(render_template(
         'bulk_upload.html',
         bulk_in_progress=bool(job and job.get('status') in ['pending', 'running', 'cancelling']),
         job=job,
         results=(job.get('results', [])[-200:] if job else []),
         success_count=(job.get('success_count', 0) if job else 0),
         failed_count=(job.get('failed_count', 0) if job else 0),
-    )
+    ))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 def _job_snapshot(job_id: str):
@@ -822,12 +904,7 @@ def _job_snapshot(job_id: str):
                 snap['results'] = list(snap['results'])
             return snap
 
-    # Fallback to disk snapshot for multi-process servers
-    snap = _load_job_snapshot(job_id)
-    if snap is not None and isinstance(snap.get('results'), list):
-        # Ensure results is a list of dicts
-        snap['results'] = list(snap['results'])
-    return snap
+    return None
 
 
 @app.route('/bulk-status/<job_id>', methods=['GET'])
@@ -841,14 +918,18 @@ def bulk_status(job_id):
         flash('Bulk job not found or expired.', 'error')
         return redirect(url_for('bulk_upload'))
     session['last_bulk_job_id'] = job_id
-    return render_template(
+    resp = make_response(render_template(
         'bulk_upload.html',
         bulk_in_progress=job['status'] in ['pending', 'running', 'cancelling'],
         job=job,
         results=job.get('results', [])[-200:],
         success_count=job.get('success_count', 0),
         failed_count=job.get('failed_count', 0)
-    )
+    ))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @app.route('/bulk-status/<job_id>/json', methods=['GET'])
@@ -859,10 +940,15 @@ def bulk_status_json(job_id):
         return jsonify({'error': 'not found'}), 404
     if job.get('client_id') != session.get('client_id'):
         return jsonify({'error': 'not found'}), 404
-    # Trim results in JSON to avoid huge payload; send last 20
+    # Trim results in JSON to avoid huge payload; do NOT mutate the stored job
     results = job.get('results', [])
-    job['results'] = results[-20:]
-    return jsonify(job)
+    payload = dict(job)
+    payload['results'] = results[-20:]
+    resp = make_response(jsonify(payload))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @app.route('/bulk-cancel/<job_id>', methods=['POST'])
@@ -878,8 +964,11 @@ def bulk_cancel(job_id):
             cancel_event.set()
             job['message'] = 'Cancellation requested'
             job['status'] = 'cancelling'
+            snap = {k: v for k, v in job.items() if k != 'cancel_event'}
+        else:
+            snap = None
     flash('Bulk upload cancellation requested. Pending orders will stop shortly.', 'info')
-    return redirect(url_for('bulk_status', job_id=job_id))
+    return redirect(url_for('bulk_status', job_id=job_id), code=303)
 
 
 
@@ -893,9 +982,9 @@ if __name__ == '__main__':
     logger.info("=" * 60)
     logger.info("Dhan Super Order - Web Application")
     logger.info("=" * 60)
-    logger.info("\n🚀 Starting server...")
-    logger.info("📱 Open your browser and go to: http://localhost:5000")
-    logger.info("\n⚠️  Press Ctrl+C to stop the server\n")
+    logger.info("\nStarting server...")
+    logger.info("Open your browser and go to: http://localhost:5000")
+    logger.info("\nPress Ctrl+C to stop the server\n")
     logger.info("Logs being written to: dhan_app.log")
     
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

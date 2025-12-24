@@ -32,7 +32,10 @@ class TestPlaceDhanSuperOrder:
             "orderStatus": "PENDING"
         }
 
-        with patch('requests.post', return_value=mock_response) as mock_post:
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        with patch('adapters.dhan.super_order.get_session', return_value=mock_session) as _:
             result = place_dhan_super_order(
                 intent=mock_intent,
                 security_id="1333",
@@ -42,10 +45,10 @@ class TestPlaceDhanSuperOrder:
             )
 
             # Verify request was made correctly
-            mock_post.assert_called_once()
+            mock_session.post.assert_called_once()
             
             # Get positional and keyword arguments
-            args, kwargs = mock_post.call_args
+            args, kwargs = mock_session.post.call_args
 
             # Check URL (first positional argument)
             assert args[0] == "https://api.dhan.co/v2/super/orders"
@@ -91,7 +94,10 @@ class TestPlaceDhanSuperOrder:
         mock_response.status_code = 200
         mock_response.json.return_value = {"orderId": "123", "orderStatus": "PENDING"}
 
-        with patch('requests.post', return_value=mock_response) as mock_post:
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        with patch('adapters.dhan.super_order.get_session', return_value=mock_session) as _:
             place_dhan_super_order(
                 intent=mock_intent,
                 security_id="11536",
@@ -100,7 +106,7 @@ class TestPlaceDhanSuperOrder:
                 access_token="test_token"
             )
 
-            args, kwargs = mock_post.call_args
+            args, kwargs = mock_session.post.call_args
             payload = kwargs['json']
             # Price should not be in payload for MARKET orders
             assert 'price' not in payload
@@ -124,7 +130,10 @@ class TestPlaceDhanSuperOrder:
         mock_response.status_code = 400
         mock_response.text = "Bad Request"
 
-        with patch('requests.post', return_value=mock_response):
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        with patch('adapters.dhan.super_order.get_session', return_value=mock_session):
             with pytest.raises(DhanSuperOrderError) as exc:
                 place_dhan_super_order(
                     intent=mock_intent,
@@ -156,7 +165,10 @@ class TestPlaceDhanSuperOrder:
             "errorMessage": "Insufficient funds"
         }
 
-        with patch('requests.post', return_value=mock_response):
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        with patch('adapters.dhan.super_order.get_session', return_value=mock_session):
             with pytest.raises(DhanSuperOrderError) as exc:
                 place_dhan_super_order(
                     intent=mock_intent,
@@ -187,7 +199,10 @@ class TestPlaceDhanSuperOrder:
             "orderStatus": "REJECTED"
         }
 
-        with patch('requests.post', return_value=mock_response):
+        mock_session = Mock()
+        mock_session.post.return_value = mock_response
+
+        with patch('adapters.dhan.super_order.get_session', return_value=mock_session):
             with pytest.raises(DhanSuperOrderError) as exc:
                 place_dhan_super_order(
                     intent=mock_intent,

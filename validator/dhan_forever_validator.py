@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class DhanForeverOrderIntent(BaseModel):
@@ -65,12 +65,11 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("product")
     def validate_product(cls, v: str):
         v = v.strip().upper()
-        # Dhan docs typically mention CNC/MTF for Forever orders, but allow other product types
-        # so users can test broker-side behavior (rejections/acceptance).
         if not v:
             raise ValueError("product is required for Forever Orders")
-        if v not in {"CNC", "MTF", "INTRADAY", "MARGIN"}:
-            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF, INTRADAY, MARGIN")
+        # Official docs for Create Forever Order list CNC / MTF.
+        if v not in {"CNC", "MTF", "NORMAL"}:
+            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF")
         return v
 
     @field_validator("trigger_price")
@@ -81,7 +80,7 @@ class DhanForeverOrderIntent(BaseModel):
 
     @field_validator("price")
     def validate_price(cls, v, info):
-        # Forever orders require price even for MARKET in current API schema
+        # Docs: price required for Create Forever Order.
         if v is None:
             raise ValueError("price is required for Forever Orders")
         return v
@@ -89,8 +88,9 @@ class DhanForeverOrderIntent(BaseModel):
     @field_validator("order_flag")
     def validate_flag(cls, v: str):
         v = v.strip().upper()
-        if v not in {"SINGLE", "OCO", "NORMAL"}:
-            raise ValueError("order_flag must be SINGLE, OCO, or NORMAL")
+        # Docs: OCO or SINGLE for Create Forever Order.
+        if v not in {"SINGLE", "OCO"}:
+            raise ValueError("order_flag must be SINGLE or OCO")
         return v
 
     @field_validator("validity")
@@ -106,6 +106,14 @@ class DhanForeverOrderIntent(BaseModel):
             raise ValueError("disclosed_quantity must be >= 0")
         if v and v >= info.data.get("qty", 0):
             raise ValueError("disclosed_quantity must be less than qty")
+        # Docs: disclosedQuantity (if used) should be at least 30% of quantity.
+        qty = info.data.get("qty", 0) or 0
+        if v and qty:
+            import math
+
+            min_dq = int(math.ceil(0.3 * float(qty)))
+            if v < min_dq:
+                raise ValueError(f"disclosed_quantity must be >= {min_dq} (30% of qty)")
         return v
 
     @field_validator("quantity1")
@@ -118,12 +126,32 @@ class DhanForeverOrderIntent(BaseModel):
 
     @field_validator("price1")
     def validate_price1(cls, v, info):
-        if info.data.get("order_flag") == "OCO" and v is None:
-            raise ValueError("price1 is required for OCO forever orders")
+        if info.data.get("order_flag") == "OCO":
+            if v is None:
+                raise ValueError("price1 is required for OCO forever orders")
+            if v <= 0:
+                raise ValueError("price1 must be > 0 for OCO forever orders")
         return v
 
     @field_validator("trigger_price1")
     def validate_trigger1(cls, v, info):
-        if info.data.get("order_flag") == "OCO" and v is None:
-            raise ValueError("trigger_price1 is required for OCO forever orders")
+        if info.data.get("order_flag") == "OCO":
+            if v is None:
+                raise ValueError("trigger_price1 is required for OCO forever orders")
+            if v <= 0:
+                raise ValueError("trigger_price1 must be > 0 for OCO forever orders")
         return v
+
+    @model_validator(mode="after")
+    def validate_oco_leg_requirements(self):
+        if self.order_flag == "OCO":
+            missing = []
+            if self.price1 is None:
+                missing.append("price1")
+            if self.trigger_price1 is None:
+                missing.append("trigger_price1")
+            if self.quantity1 is None:
+                missing.append("quantity1")
+            if missing:
+                raise ValueError(f"Missing OCO fields: {', '.join(missing)}")
+        return self

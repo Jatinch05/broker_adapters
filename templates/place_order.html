@@ -180,7 +180,7 @@
                 <select id="order_flag" name="order_flag">
                     <option value="SINGLE">SINGLE</option>
                     <option value="OCO">OCO</option>
-                    <option value="NORMAL">NORMAL</option>
+                        <!-- <option value="NORMAL">NORMAL</option> -->
                 </select>
             </div>
 
@@ -195,7 +195,7 @@
             <div class="form-group" id="foreverDQ">
                 <label for="disclosed_quantity">Disclosed Quantity</label>
                 <input type="number" id="disclosed_quantity" name="disclosed_quantity" min="0" placeholder="e.g., 1">
-                <div class="hint">Visible shares; must be < quantity</div>
+                 <div class="hint">Visible shares; if set, must be &ge; 30% of qty and &lt; qty</div>
             </div>
 
             <!-- OCO secondary leg -->
@@ -256,19 +256,58 @@
 {% block scripts %}
 <script>
 function togglePrice() {
+    const flow = document.getElementById('order_flow').value;
     const orderType = document.getElementById('order_type').value;
     const priceGroup = document.getElementById('priceGroup');
     const priceInput = document.getElementById('price');
-    
-    if (orderType === 'MARKET') {
-        // For Forever, price is required; for Super, we can allow empty.
-        priceInput.disabled = false;
+
+    // Super: price required only for LIMIT; Market should allow empty.
+    // Forever: docs require price for both LIMIT and MARKET.
+    const requirePrice = (flow === 'FOREVER') || (orderType === 'LIMIT');
+    priceInput.disabled = false;
+    if (requirePrice) {
         priceInput.setAttribute('required', 'required');
         priceGroup.style.opacity = '1';
-    } else if (orderType === 'LIMIT') {
-        priceInput.disabled = false;
-        priceInput.setAttribute('required', 'required');
-        priceGroup.style.opacity = '1';
+    } else {
+        priceInput.removeAttribute('required');
+        priceGroup.style.opacity = '0.6';
+    }
+}
+
+function toggleOCOFields() {
+    const flow = document.getElementById('order_flow').value;
+    const flag = document.getElementById('order_flag').value;
+    const isForever = (flow === 'FOREVER');
+    const isOco = isForever && (flag === 'OCO');
+
+    const ocoIds = ['price1','trigger_price1','quantity1'];
+    ocoIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.required = isOco;
+        el.disabled = !isForever;
+    });
+}
+
+function updateProductOptionsForFlow() {
+    const flow = document.getElementById('order_flow').value;
+    const productSelect = document.getElementById('product');
+    if (!productSelect) return;
+
+    const foreverAllowed = new Set(['', 'CNC', 'MTF']);
+    for (const opt of productSelect.options) {
+        const val = (opt.value || '').toUpperCase();
+        if (flow === 'FOREVER') {
+            opt.disabled = !foreverAllowed.has(val);
+        } else {
+            opt.disabled = false;
+        }
+    }
+
+    // If current selection is not valid for Forever, reset to blank.
+    const current = (productSelect.value || '').toUpperCase();
+    if (flow === 'FOREVER' && !foreverAllowed.has(current)) {
+        productSelect.value = '';
     }
 }
 
@@ -353,8 +392,24 @@ function toggleFlow() {
         el.disabled = superVisible;
     });
 
+    updateProductOptionsForFlow();
+    togglePrice();
+    toggleOCOFields();
+
 }
 
 toggleFlow();
+
+document.getElementById('order_flow').addEventListener('change', () => {
+    toggleFlow();
+});
+
+document.getElementById('order_flag').addEventListener('change', () => {
+    toggleOCOFields();
+});
+
+document.getElementById('order_type').addEventListener('change', () => {
+    togglePrice();
+});
 </script>
 {% endblock %}

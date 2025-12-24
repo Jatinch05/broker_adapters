@@ -22,12 +22,12 @@ class TestDhanSuperOrderOrchestrator:
     def mock_instrument(self):
         """Create mock instrument"""
         mock_row = {
-            "SEM_SM_SYMBOL": "HDFCBANK",
-            "SEM_SM_SECURITY_ID": "1333",
-            "SEM_EXM_EXCHANGE_CODE": "NSE_EQ",
-            "SEM_SM_LOT_SIZE": 1,
-            "SEM_SM_EXPIRY_DATE": None,
-            "SEM_SM_INSTRUMENT_TYPE": "EQUITY"
+            "SYMBOL_NAME": "HDFCBANK",
+            "SECURITY_ID": "1333",
+            "EXCH_ID": "NSE",
+            "LOT_SIZE": 1,
+            "SM_EXPIRY_DATE": None,
+            "INSTRUMENT_TYPE": "EQUITY",
         }
         return DhanInstrument(mock_row)
 
@@ -115,12 +115,12 @@ class TestDhanSuperOrderOrchestrator:
         }
 
         mock_row = {
-            "SEM_SM_SYMBOL": "HDFCBANK",
-            "SEM_SM_SECURITY_ID": "1333",
-            "SEM_EXM_EXCHANGE_CODE": "NSE_EQ",  # NSE, not BSE
-            "SEM_SM_LOT_SIZE": 1,
-            "SEM_SM_EXPIRY_DATE": None,
-            "SEM_SM_INSTRUMENT_TYPE": "EQUITY"
+            "SYMBOL_NAME": "HDFCBANK",
+            "SECURITY_ID": "1333",
+            "EXCH_ID": "NSE",  # NSE, not BSE
+            "LOT_SIZE": 1,
+            "SM_EXPIRY_DATE": None,
+            "INSTRUMENT_TYPE": "EQUITY",
         }
         mock_instrument = DhanInstrument(mock_row)
 
@@ -150,12 +150,12 @@ class TestDhanSuperOrderOrchestrator:
         }
 
         mock_row = {
-            "SEM_SM_SYMBOL": "NIFTY27FEB2025FUT",
-            "SEM_SM_SECURITY_ID": "12345",
-            "SEM_EXM_EXCHANGE_CODE": "NSE_FNO",
-            "SEM_SM_LOT_SIZE": 50,
-            "SEM_SM_EXPIRY_DATE": "2025-02-27",
-            "SEM_SM_INSTRUMENT_TYPE": "FUTIDX"
+            "SYMBOL_NAME": "NIFTY27FEB2025FUT",
+            "SECURITY_ID": "12345",
+            "EXCH_ID": "NSE",
+            "LOT_SIZE": 50,
+            "SM_EXPIRY_DATE": "2025-02-27",
+            "INSTRUMENT_TYPE": "FUTIDX",
         }
         mock_instrument = DhanInstrument(mock_row)
 

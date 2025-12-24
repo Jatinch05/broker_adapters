@@ -1,8 +1,5 @@
-import requests
-import time
 from typing import Dict, Any
 
-from adapters.dhan.errors import DhanSuperOrderError as _CompatError
 from adapters.dhan.http_session import get_session
 
 DHAN_BASE_URL = "https://api.dhan.co"
@@ -39,26 +36,19 @@ def place_dhan_forever_order(*, intent, security_id: str, exchange_segment: str,
         "disclosedQuantity": int(intent.disclosed_quantity or 0),
         "price": float(intent.price),
         "triggerPrice": float(intent.trigger_price),
-        "price1": float(intent.price1) if intent.price1 is not None else 0.0,
-        "triggerPrice1": float(intent.trigger_price1) if intent.trigger_price1 is not None else 0.0,
-        "quantity1": int(intent.quantity1) if intent.quantity1 is not None else 0,
     }
 
     if getattr(intent, "tag", None) is not None:
         payload["correlationId"] = intent.tag
 
-    # Retry once on timeout/connection to avoid long hangs
-    max_attempts = 2
-    last_exc = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            resp = get_session().post(url, json=payload, headers=headers, timeout=5)
-            break
-        except (requests.Timeout, requests.ConnectionError) as exc:
-            last_exc = exc
-            if attempt == max_attempts:
-                raise DhanForeverOrderError(f"Forever Order request failed: {exc}") from exc
-            time.sleep(0.5)
+    # OCO leg fields are only applicable when orderFlag is OCO.
+    if str(getattr(intent, "order_flag", "")).strip().upper() == "OCO":
+        payload["price1"] = float(intent.price1)
+        payload["triggerPrice1"] = float(intent.trigger_price1)
+        payload["quantity1"] = int(intent.quantity1)
+
+    # Fire-and-forget (single attempt)
+    resp = get_session().post(url, json=payload, headers=headers, timeout=5)
 
     if resp.status_code != 200:
         raise DhanForeverOrderError(

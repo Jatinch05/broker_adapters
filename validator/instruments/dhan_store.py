@@ -198,7 +198,7 @@ class DhanStore:
             # Streaming find: scan CSV in chunks to find the first match
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"Streaming lookup for symbol: {key}")
+            logger.debug(f"Streaming lookup for symbol: {key}")
             try:
                 for chunk in pd.read_csv(
                     cls._csv_path,
@@ -219,15 +219,167 @@ class DhanStore:
                         sec_id = str(row.get('SECURITY_ID','')).strip()
                         if sec_id:
                             cls._by_security_id[sec_id] = row
-                        logger.info(f"Streaming found: {key}, security_id={sec_id}")
+                        logger.debug(f"Streaming found: {key}, security_id={sec_id}")
                         break
                 if row is None:
-                    logger.warning(f"Streaming lookup failed for: {key}")
+                    logger.debug(f"Streaming lookup failed for: {key}")
             except Exception as e:
                 logger.error(f"Streaming lookup error for {key}: {e}")
         if row is None:
             return None
         return DhanInstrument(row)
+
+    @classmethod
+    def prefetch_bulk(cls, df: pd.DataFrame):
+        """Prefetch instruments needed for a bulk file.
+
+        When running in streaming mode (Render/default), repeated per-row lookups can be
+        very slow because each miss scans the large CSV. This method scans the CSV once
+        and fills caches for all requested symbols / derivative keys.
+        """
+        if df is None:
+            return
+        # If full DF is loaded, indexes are already built.
+        if cls._df is not None:
+            return
+        if cls._csv_path is None:
+            return
+
+        cols = set(df.columns)
+        has_strike = 'StrikePrice' in cols
+        has_expiry = 'ExpiryDate' in cols
+        has_opt = 'OptionType' in cols
+
+        wanted_symbols: set[str] = set()
+        wanted_detail_keys: set[tuple] = set()
+        wanted_detail_syms: set[str] = set()
+
+        # Build wanted sets from input rows
+        for row in df.itertuples(index=False):
+            sym = getattr(row, 'Symbol', None)
+            if sym is None or pd.isna(sym) or not str(sym).strip():
+                continue
+            sym_up = str(sym).strip().upper()
+
+            strike = getattr(row, 'StrikePrice', None) if has_strike else None
+            expiry = getattr(row, 'ExpiryDate', None) if has_expiry else None
+            opt = getattr(row, 'OptionType', None) if has_opt else None
+
+            # Only prefetch derivative details when all disambiguators are provided.
+            if (
+                strike is not None and not pd.isna(strike) and str(strike) != '' and
+                expiry is not None and not pd.isna(expiry) and str(expiry) != '' and
+                opt is not None and not pd.isna(opt) and str(opt) != ''
+            ):
+                try:
+                    k = (sym_up, float(strike), str(expiry).strip(), str(opt).strip().upper())
+                    wanted_detail_keys.add(k)
+                    wanted_detail_syms.add(sym_up)
+                except Exception:
+                    wanted_symbols.add(sym_up)
+            else:
+                wanted_symbols.add(sym_up)
+
+        # Remove any already cached symbols
+        remaining_symbols = {s for s in wanted_symbols if s not in (cls._by_symbol or {})}
+        remaining_detail = set(wanted_detail_keys)
+
+        if not remaining_symbols and not remaining_detail:
+            return
+
+        # Streaming scan once
+        try:
+            usecols = [
+                'SYMBOL_NAME', 'SECURITY_ID', 'EXCH_ID', 'LOT_SIZE',
+                'SM_EXPIRY_DATE', 'STRIKE_PRICE', 'OPTION_TYPE',
+                'INSTRUMENT_TYPE', 'UNDERLYING_SYMBOL'
+            ]
+            dtype = {
+                'SYMBOL_NAME': 'string',
+                'SECURITY_ID': 'string',
+                'EXCH_ID': 'string',
+                'LOT_SIZE': 'float32',
+                'SM_EXPIRY_DATE': 'string',
+                'STRIKE_PRICE': 'float64',
+                'OPTION_TYPE': 'string',
+                'INSTRUMENT_TYPE': 'string',
+                'UNDERLYING_SYMBOL': 'string',
+            }
+
+            # To speed filtering, consider all symbols we care about for either plain or derivative.
+            symbol_filter_set = set(remaining_symbols) | set(wanted_detail_syms)
+
+            for chunk in pd.read_csv(
+                cls._csv_path,
+                usecols=usecols,
+                dtype=dtype,
+                chunksize=100000,
+                engine='c'
+            ):
+                # Normalize once per chunk
+                chunk['SYMBOL_UP'] = chunk['SYMBOL_NAME'].str.upper()
+                chunk['UNDERLYING_UP'] = chunk['UNDERLYING_SYMBOL'].str.upper()
+                chunk['OPTION_UP'] = chunk['OPTION_TYPE'].str.upper()
+
+                # Cache plain symbols quickly
+                if remaining_symbols:
+                    m = chunk[chunk['SYMBOL_UP'].isin(remaining_symbols)]
+                    if len(m):
+                        for _, r in m.iterrows():
+                            sym_up = str(r.get('SYMBOL_UP', '')).strip().upper()
+                            if sym_up:
+                                cls._by_symbol[sym_up] = r
+                                sec_id = str(r.get('SECURITY_ID', '')).strip()
+                                if sec_id:
+                                    cls._by_security_id[sec_id] = r
+                                remaining_symbols.discard(sym_up)
+
+                # Cache derivative keys (and build derivative_index) in the same pass
+                if remaining_detail:
+                    # Limit to rows related to symbols we care about
+                    rel = chunk[
+                        chunk['SYMBOL_UP'].isin(symbol_filter_set) |
+                        chunk['UNDERLYING_UP'].isin(symbol_filter_set)
+                    ]
+                    if len(rel):
+                        for _, r in rel.iterrows():
+                            try:
+                                strike = r.get('STRIKE_PRICE')
+                                expiry = r.get('SM_EXPIRY_DATE')
+                                opt = r.get('OPTION_UP')
+                                if pd.isna(expiry) or pd.isna(strike) or pd.isna(opt) or str(opt).strip() == "":
+                                    continue
+
+                                sym_up = str(r.get('SYMBOL_UP', '')).strip().upper()
+                                und_up = str(r.get('UNDERLYING_UP', '')).strip().upper()
+                                k1 = (sym_up, float(strike), str(expiry), str(opt).strip().upper())
+                                k2 = (und_up, float(strike), str(expiry), str(opt).strip().upper()) if und_up else None
+
+                                matched = False
+                                if k1 in remaining_detail:
+                                    cls._derivative_index[k1] = r
+                                    remaining_detail.remove(k1)
+                                    matched = True
+                                if k2 and k2 in remaining_detail:
+                                    cls._derivative_index[k2] = r
+                                    remaining_detail.remove(k2)
+                                    matched = True
+
+                                if matched:
+                                    # also populate base caches for future lookups
+                                    if sym_up:
+                                        cls._by_symbol[sym_up] = r
+                                    sec_id = str(r.get('SECURITY_ID', '')).strip()
+                                    if sec_id:
+                                        cls._by_security_id[sec_id] = r
+                            except Exception:
+                                continue
+
+                if not remaining_symbols and not remaining_detail:
+                    break
+        except Exception:
+            # Prefetch is an optimization; failures should not break order placement.
+            return
 
     @classmethod
     def lookup_security_id(cls, security_id: str):

@@ -57,7 +57,7 @@ class DhanSuperOrderIntent(BaseModel):
         v = v.strip().upper()
         if v not in {"INTRADAY", "CNC", "MARGIN", "MTF", "NORMAL"}:
             raise ValueError(
-                "Invalid product for Super Order. Allowed: INTRADAY, CNC, MARGIN, MTF"
+                "Invalid product for Super Order. Allowed: INTRADAY, CNC, MARGIN, MTF, NORMAL"
             )
         return v
 
