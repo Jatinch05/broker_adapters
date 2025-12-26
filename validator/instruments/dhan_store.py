@@ -420,12 +420,24 @@ class DhanStore:
         if strike_price is None and expiry_date is None and option_type is None:
             return cls.lookup_symbol(symbol)
         
-        # Use fast derivative index if all filters provided
-        if strike_price is not None and expiry_date is not None and option_type is not None:
-            key = (key_symbol, float(strike_price), str(expiry_date), option_type.strip().upper())
-            row = cls._derivative_index.get(key)
-            if row is not None:
-                return DhanInstrument(row)
+        # Use fast derivative index if strike AND option_type are provided (expiry optional).
+        # BSXOPT may not have expiry for certain series.
+        if strike_price is not None and option_type is not None:
+            # First, try exact match with expiry if provided
+            if expiry_date is not None:
+                key = (key_symbol, float(strike_price), str(expiry_date), option_type.strip().upper())
+                row = cls._derivative_index.get(key)
+                if row is not None:
+                    return DhanInstrument(row)
+            # If not found or expiry not provided, try to find ANY row matching symbol+strike+optiontype
+            # (ignoring expiry for BSXOPT which may have empty/varied expirydate)
+            for cached_key, cached_row in cls._derivative_index.items():
+                if (
+                    cached_key[0] == key_symbol
+                    and float(cached_key[1]) == float(strike_price)
+                    and str(cached_key[3]).upper() == str(option_type).strip().upper()
+                ):
+                    return DhanInstrument(cached_row)
 
         # Fallback
         if cls._df is not None:

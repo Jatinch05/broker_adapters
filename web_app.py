@@ -308,15 +308,21 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                         if has_price1:
                             vv = getattr(row, 'Price1', None)
                             if vv is not None and not pd.isna(vv):
-                                order_data['price1'] = float(vv)
+                                vv_str = str(vv).strip()
+                                if vv_str:
+                                    order_data['price1'] = float(vv_str)
                         if has_trigger1:
                             vv = getattr(row, 'TriggerPrice1', None)
                             if vv is not None and not pd.isna(vv):
-                                order_data['trigger_price1'] = float(vv)
+                                vv_str = str(vv).strip()
+                                if vv_str:
+                                    order_data['trigger_price1'] = float(vv_str)
                         if has_qty1:
                             vv = getattr(row, 'Quantity1', None)
                             if vv is not None and not pd.isna(vv):
-                                order_data['quantity1'] = int(vv)
+                                vv_str = str(vv).strip()
+                                if vv_str:
+                                    order_data['quantity1'] = int(float(vv_str))
 
                     if has_validity:
                         vv = getattr(row, 'Validity', None)
