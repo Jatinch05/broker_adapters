@@ -507,6 +507,13 @@ class DhanStore:
                         filtered = filtered[filtered['SM_EXPIRY_DATE'] == str(expiry_date)]
                     if opt_upper is not None:
                         filtered = filtered[filtered['OPTION_TYPE'].str.upper() == opt_upper]
+                    if not len(filtered) and (strike_price is not None and opt_upper is not None and expiry_date is not None):
+                        # Retry without expiry constraint (helps BSXOPT when expiry format differs)
+                        filtered = chunk[
+                            (chunk['SYMBOL_UP'] == key_symbol) &
+                            (chunk['STRIKE_PRICE'] == float(strike_price)) &
+                            (chunk['OPTION_UP'] == opt_upper)
+                        ]
                     if len(filtered):
                         row = filtered.iloc[0]
                         # cache
@@ -516,7 +523,7 @@ class DhanStore:
                         sym = str(row.get('SYMBOL_NAME','')).strip().upper()
                         if sym:
                             cls._by_symbol[sym] = row
-                        if strike_price is not None and expiry_date is not None and opt_upper is not None:
+                        if strike_price is not None and opt_upper is not None:
                             key = (sym, float(row.get('STRIKE_PRICE')), str(row.get('SM_EXPIRY_DATE')), opt_upper)
                             cls._derivative_index[key] = row
                         return DhanInstrument(row)

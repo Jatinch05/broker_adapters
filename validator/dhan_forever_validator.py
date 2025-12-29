@@ -69,7 +69,7 @@ class DhanForeverOrderIntent(BaseModel):
             raise ValueError("product is required for Forever Orders")
         # Official docs for Create Forever Order list CNC / MTF.
         if v not in {"CNC", "MTF", "NORMAL"}:
-            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF")
+            raise ValueError("Invalid product for Forever Order. Allowed: CNC, MTF, NORMAL")
         return v
 
     @field_validator("trigger_price")
