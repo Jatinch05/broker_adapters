@@ -279,4 +279,3 @@ def resolve_instrument(symbol: str, exchange: str, strike_price=None, expiry_dat
 def start_deferred_worker():
     DeferredSuperQueue.init_db()
     DeferredSuperQueue.start_worker_once()
-*** End Patch
