@@ -466,6 +466,16 @@ class DhanStore:
                 filtered = filtered[filtered['SM_EXPIRY_DATE'] == str(expiry_date)]
             if option_type is not None:
                 filtered = filtered[filtered['OPTION_TYPE'].str.upper() == option_type.strip().upper()]
+            # If no match and we had all disambiguators, retry without expiry (expiry text often varies)
+            if (
+                (strike_price is not None and option_type is not None and expiry_date is not None)
+                and len(filtered) == 0
+            ):
+                filtered = cls._df[
+                    (cls._df['SYMBOL_NAME'].str.upper() == key_symbol)
+                    & (cls._df['STRIKE_PRICE'] == float(strike_price))
+                    & (cls._df['OPTION_TYPE'].str.upper() == option_type.strip().upper())
+                ]
             if len(filtered) == 0:
                 return None
             return DhanInstrument(filtered.iloc[0])

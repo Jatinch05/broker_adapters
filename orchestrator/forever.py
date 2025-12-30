@@ -46,6 +46,9 @@ class DhanForeverOrderOrchestrator:
                     expiry_date=expiry_date,
                     option_type=option_type,
                 )
+                # Fallback: if derivative lookup misses (expiry format mismatch etc.), try plain symbol
+                if instrument is None:
+                    instrument = DhanStore.lookup_symbol(intent.symbol)
             else:
                 instrument = DhanStore.lookup_symbol(intent.symbol)
 
