@@ -19,6 +19,11 @@ from orchestrator.forever import DhanForeverOrderOrchestrator, DhanForeverOrderE
 from validator.instruments.dhan_store import DhanStore
 from validator.instruments.dhan_refresher import refresh_dhan_instruments
 from apis.dhan.auth import authenticate, DhanAuthError
+from services.deferred_super_queue import (
+    DeferredSuperQueue,
+    resolve_instrument,
+    start_deferred_worker,
+)
 
 app = Flask(__name__)
 
@@ -32,6 +37,9 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = True if os.environ.get('RENDER') else False
 ALLOWED_EXTENSIONS = {'xlsx', 'xls', 'csv'}
+
+# Start deferred buy worker once per process
+start_deferred_worker()
 
 # Setup logging - logs to console (visible in Render)
 logging.basicConfig(
@@ -194,6 +202,7 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
         has_strike = 'StrikePrice' in cols
         has_expiry = 'ExpiryDate' in cols
         has_opt_type = 'OptionType' in cols
+        has_tolerance = 'Tolerance' in cols
 
         # Iterate efficiently (faster than iterrows)
         for index, row in enumerate(df.itertuples(index=False), start=0):
@@ -220,6 +229,7 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 build_s = 0.0
                 rate_s = 0.0
                 api_s = 0.0
+                counted = False
                 # Validate required fields
                 row_symbol = getattr(row, 'Symbol', None)
                 if row_symbol is None or pd.isna(row_symbol) or not str(row_symbol).strip():
@@ -343,6 +353,13 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 else:
                     order_data = dict(base_common)
                     order_data['order_category'] = 'SUPER'
+                    tolerance_pct = None
+                    if has_tolerance:
+                        tv = getattr(row, 'Tolerance', None)
+                        if tv is not None and not pd.isna(tv):
+                            tv_str = str(tv).strip()
+                            if tv_str:
+                                tolerance_pct = float(tv_str)
                     if has_target:
                         v = getattr(row, 'TargetPrice', None)
                         if v is not None and not pd.isna(v) and v != '':
@@ -392,6 +409,59 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                         if vv is not None and not pd.isna(vv) and vv != '':
                             order_data['tag'] = str(vv).strip()
 
+                    queued = False
+                    if tolerance_pct is not None and tolerance_pct > 0:
+                        if order_data.get('price') is None:
+                            result['status'] = 'Failed'
+                            result['message'] = 'Tolerance provided but Price is required for deferred Super orders'
+                            with bulk_jobs_lock:
+                                job = bulk_jobs.get(job_id)
+                                if job is None:
+                                    return
+                                job['results'].append(result)
+                                job['failed_count'] += 1
+                            continue
+                        if order_data.get('txn_type') != 'BUY':
+                            result['status'] = 'Failed'
+                            result['message'] = 'Tolerance deferral supported only for BUY Super orders'
+                            with bulk_jobs_lock:
+                                job = bulk_jobs.get(job_id)
+                                if job is None:
+                                    return
+                                job['results'].append(result)
+                                job['failed_count'] += 1
+                            continue
+                        try:
+                            inst, exch_seg = resolve_instrument(
+                                symbol=order_data['symbol'],
+                                exchange=order_data['exchange'],
+                                strike_price=order_data.get('strike_price'),
+                                expiry_date=order_data.get('expiry_date'),
+                                option_type=order_data.get('option_type'),
+                            )
+                            DeferredSuperQueue.enqueue(
+                                order_data=order_data,
+                                client_id=client_id,
+                                access_token=access_token,
+                                trigger_price=float(order_data['price']),
+                                tolerance_pct=float(tolerance_pct),
+                                security_id=str(inst.security_id),
+                                exchange_segment=exch_seg,
+                            )
+                            result['status'] = 'Queued'
+                            result['message'] = f"Deferred until LTP within +/-{tolerance_pct}% of {order_data['price']}"
+                            queued = True
+                        except Exception as e:
+                            result['status'] = 'Failed'
+                            result['message'] = f'Queue error: {str(e)}'
+                            with bulk_jobs_lock:
+                                job = bulk_jobs.get(job_id)
+                                if job is None:
+                                    return
+                                job['results'].append(result)
+                                job['failed_count'] += 1
+                            continue
+
                 # Keep logging light (bulk speed + avoids noisy logs)
                 if (row_num % 25) == 0:
                     logger.info(
@@ -403,53 +473,63 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                 if cancel_event.is_set():
                     raise RuntimeError("Cancelled")
 
-                rate_start = time.perf_counter()
-                rate_limit_wait()
-                rate_s = time.perf_counter() - rate_start
+                if queued:
+                    rate_s = 0.0
+                    api_s = 0.0
+                    response = None
+                else:
+                    rate_start = time.perf_counter()
+                    rate_limit_wait()
+                    rate_s = time.perf_counter() - rate_start
 
-                api_start = time.perf_counter()
-                try:
-                    if is_forever:
-                        response = orch_forever.place_forever_order(order_data)
-                    else:
-                        response = orch_super.place_super_order(order_data)
-                except Exception:
+                    api_start = time.perf_counter()
+                    try:
+                        if is_forever:
+                            response = orch_forever.place_forever_order(order_data)
+                        else:
+                            response = orch_super.place_super_order(order_data)
+                    except Exception:
+                        api_s = time.perf_counter() - api_start
+                        raise
                     api_s = time.perf_counter() - api_start
-                    raise
-                api_s = time.perf_counter() - api_start
 
-                order_record = {
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'symbol': order_data['symbol'],
-                    'exchange': order_data['exchange'],
-                    'type': order_data['txn_type'],
-                    'quantity': order_data['qty'],
-                    'order_type': order_data['order_type'],
-                    'price': order_data.get('price', 'MARKET'),
-                    'product': order_data['product'],
-                    'target': order_data.get('target_price', 'N/A'),
-                    'stop_loss': order_data.get('stop_loss_price', 'N/A'),
-                    'trail_sl': order_data.get('trailing_jump', 'N/A'),
-                    'tag': order_data.get('tag', ''),
-                    'order_id': response.get('orderId', 'N/A'),
-                    'status': 'Success'
-                }
-                order_history.append(order_record)
-                if len(order_history) > MAX_ORDER_HISTORY:
-                    order_history.pop(0)
+                if not queued:
+                    order_record = {
+                        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'symbol': order_data['symbol'],
+                        'exchange': order_data['exchange'],
+                        'type': order_data['txn_type'],
+                        'quantity': order_data['qty'],
+                        'order_type': order_data['order_type'],
+                        'price': order_data.get('price', 'MARKET'),
+                        'product': order_data['product'],
+                        'target': order_data.get('target_price', 'N/A'),
+                        'stop_loss': order_data.get('stop_loss_price', 'N/A'),
+                        'trail_sl': order_data.get('trailing_jump', 'N/A'),
+                        'tag': order_data.get('tag', ''),
+                        'order_id': response.get('orderId', 'N/A'),
+                        'status': 'Success'
+                    }
+                    order_history.append(order_record)
+                    if len(order_history) > MAX_ORDER_HISTORY:
+                        order_history.pop(0)
 
-                result['status'] = 'Success'
-                result['message'] = 'Order placed successfully'
-                result['order_id'] = response.get('orderId', 'N/A')
-                with bulk_jobs_lock:
-                    job = bulk_jobs.get(job_id)
-                    if job is None:
-                        return
-                    job['success_count'] += 1
-                    job['perf']['orders_seen'] += 1
-                    job['perf']['build_s_total'] += build_s
-                    job['perf']['rate_wait_s_total'] += rate_s
-                    job['perf']['api_s_total'] += api_s
+                    result['status'] = 'Success'
+                    result['message'] = 'Order placed successfully'
+                    result['order_id'] = response.get('orderId', 'N/A')
+                    counted = True
+                    with bulk_jobs_lock:
+                        job = bulk_jobs.get(job_id)
+                        if job is None:
+                            return
+                        if result['status'] == 'Success' or result['status'] == 'Queued':
+                            job['success_count'] += 1
+                        else:
+                            job['failed_count'] += 1
+                        job['perf']['orders_seen'] += 1
+                        job['perf']['build_s_total'] += build_s
+                        job['perf']['rate_wait_s_total'] += rate_s
+                        job['perf']['api_s_total'] += api_s
             except ValueError as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Validation error: {str(e)}'
@@ -461,6 +541,7 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     # Still track time even when validation fails (build cost)
                     job['perf']['orders_seen'] += 1
                     job['perf']['build_s_total'] += (time.perf_counter() - build_start)
+                    counted = True
             except (DhanSuperOrderError, DhanForeverOrderError) as e:
                 result['status'] = 'Failed'
                 result['message'] = f'Order error: {str(e)}'
@@ -473,6 +554,7 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     job['perf']['build_s_total'] += build_s
                     job['perf']['rate_wait_s_total'] += rate_s
                     job['perf']['api_s_total'] += api_s
+                    counted = True
             except Exception as e:
                 if str(e) == 'Cancelled':
                     # Respect cancellation without counting as a failure
@@ -494,11 +576,21 @@ def _run_bulk_job(job_id: str, df: pd.DataFrame, client_id: str, access_token: s
                     job['perf']['build_s_total'] += build_s
                     job['perf']['rate_wait_s_total'] += rate_s
                     job['perf']['api_s_total'] += api_s
+                    counted = True
 
             with bulk_jobs_lock:
                 job = bulk_jobs.get(job_id)
                 if job is None:
                     return
+                if not counted:
+                    if result['status'] == 'Success' or result['status'] == 'Queued':
+                        job['success_count'] += 1
+                    else:
+                        job['failed_count'] += 1
+                    job['perf']['orders_seen'] += 1
+                    job['perf']['build_s_total'] += build_s
+                    job['perf']['rate_wait_s_total'] += rate_s
+                    job['perf']['api_s_total'] += api_s
                 job['results'].append(result)
 
                 # Track overall row time
@@ -684,6 +776,38 @@ def place_order():
                 order_data['stop_loss_price'] = float(request.form.get('stop_loss_price', 0))
                 order_data['trailing_jump'] = float(request.form.get('trailing_jump', 0))
                 order_data['order_category'] = 'SUPER'
+                tolerance_raw = request.form.get('tolerance', '').strip()
+                tolerance_pct = float(tolerance_raw) if tolerance_raw else None
+
+                if tolerance_pct is not None and tolerance_pct > 0:
+                    if order_data.get('price') is None:
+                        flash('Tolerance provided but Price is required for deferred Super orders.', 'error')
+                        return redirect(url_for('place_order'))
+                    if order_data.get('txn_type') != 'BUY':
+                        flash('Tolerance deferral is supported only for BUY Super orders.', 'error')
+                        return redirect(url_for('place_order'))
+                    try:
+                        inst, exch_seg = resolve_instrument(
+                            symbol=order_data['symbol'],
+                            exchange=order_data['exchange'],
+                            strike_price=order_data.get('strike_price'),
+                            expiry_date=order_data.get('expiry_date'),
+                            option_type=order_data.get('option_type'),
+                        )
+                        DeferredSuperQueue.enqueue(
+                            order_data=order_data,
+                            client_id=session['client_id'],
+                            access_token=session['access_token'],
+                            trigger_price=float(order_data['price']),
+                            tolerance_pct=float(tolerance_pct),
+                            security_id=str(inst.security_id),
+                            exchange_segment=exch_seg,
+                        )
+                        flash(f"Super order queued until LTP within +/-{tolerance_pct}% of {order_data['price']}", 'info')
+                        return redirect(url_for('order_history_page'))
+                    except Exception as e:
+                        flash(f'Failed to enqueue deferred Super order: {str(e)}', 'error')
+                        return redirect(url_for('place_order'))
 
                 orchestrator = DhanSuperOrderOrchestrator(
                     client_id=session['client_id'],
@@ -740,6 +864,22 @@ def place_order():
 def order_history_page():
     """Display order history"""
     return render_template('order_history.html', orders=order_history)
+
+
+@app.route('/deferred-queue', methods=['GET'])
+@login_required
+def deferred_queue():
+    """Return deferred Super order queue contents"""
+    return jsonify({'items': DeferredSuperQueue.list_all()})
+
+
+@app.route('/deferred-queue/clear', methods=['POST'])
+@login_required
+def deferred_queue_clear():
+    """Clear deferred Super order queue"""
+    DeferredSuperQueue.clear()
+    flash('Deferred queue cleared.', 'info')
+    return redirect(url_for('dashboard'))
 
 
 @app.route('/refresh-instruments', methods=['POST'])
