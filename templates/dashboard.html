@@ -59,6 +59,20 @@
             </a>
         </div>
 
+        <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="font-size: 20px; font-weight: 600; color: #333; display: flex; gap: 10px; align-items: center;">
+                    <span>⏳</span> <span>Deferred Super Queue</span>
+                </div>
+                <form method="POST" action="{{ url_for('deferred_queue_clear') }}" onsubmit="return confirm('Clear all queued deferred Super orders?');">
+                    <button type="submit" class="btn btn-secondary" style="padding: 8px 14px;">Clear</button>
+                </form>
+            </div>
+            <div id="deferredSummary" style="font-size: 14px; color: #374151; margin-bottom: 8px;">Loading queue…</div>
+            <div id="deferredList" style="display: grid; gap: 8px;"></div>
+            <div id="deferredEmpty" style="color: #6b7280; font-size: 13px; display: none;">No deferred Super buys queued.</div>
+        </div>
+
 
         <div style="padding: 20px; border: 2px solid #e5e7eb; border-radius: 8px; text-align: center;">
             <div style="font-size: 36px; margin-bottom: 10px;">🔄</div>
@@ -101,4 +115,47 @@
         </div>
     </div>
 </div>
+
+<script>
+async function loadDeferredQueue() {
+    try {
+        const res = await fetch('{{ url_for('deferred_queue') }}');
+        if (!res.ok) throw new Error('Failed to load queue');
+        const data = await res.json();
+        const items = data.items || [];
+        const summary = document.getElementById('deferredSummary');
+        const list = document.getElementById('deferredList');
+        const empty = document.getElementById('deferredEmpty');
+        summary.textContent = `${items.length} queued (auto-placed when LTP enters tolerance band)`;
+        list.innerHTML = '';
+        if (!items.length) {
+            empty.style.display = 'block';
+            return;
+        }
+        empty.style.display = 'none';
+        items.slice(0, 6).forEach(item => {
+            const card = document.createElement('div');
+            card.style.padding = '10px';
+            card.style.border = '1px solid #e5e7eb';
+            card.style.borderRadius = '8px';
+            card.style.background = '#f9fafb';
+            card.innerHTML = `
+                <div style="display:flex; justify-content: space-between; font-weight: 600; color: #111827;">
+                    <span>${item.symbol} (${item.exchange_segment})</span>
+                    <span style="color: ${item.status === 'pending' ? '#f97316' : '#10b981'};">${item.status}</span>
+                </div>
+                <div style="margin-top: 4px; font-size: 13px; color: #374151;">Trigger: ${item.trigger_price} | Tol: ${item.tolerance_pct}% | LTP: ${item.last_ltp || '—'}</div>
+                <div style="margin-top: 2px; font-size: 12px; color: #6b7280;">Updated: ${item.updated_at || item.created_at}</div>
+            `;
+            list.appendChild(card);
+        });
+    } catch (e) {
+        const summary = document.getElementById('deferredSummary');
+        summary.textContent = 'Unable to load deferred queue.';
+    }
+}
+
+loadDeferredQueue();
+setInterval(loadDeferredQueue, 5000);
+</script>
 {% endblock %}

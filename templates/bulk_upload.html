@@ -32,6 +32,7 @@
         <h3 style="margin-top: 20px;">📋 Optional/Flow-Specific Columns:</h3>
         <ul style="line-height: 1.8;">
             <li><strong>SUPER</strong>: <code>TargetPrice</code>, <code>StopLoss</code>, <code>TrailingStopLoss</code>, optional <code>Price</code>, <code>Tag</code></li>
+            <li><strong>SUPER Deferred (BUY + LIMIT):</strong> optional <code>Tolerance</code>% — queues the entry until LTP is within +/- tolerance of <code>Price</code></li>
             <li><strong>FOREVER</strong>: <code>TriggerPrice</code> (required), <code>Price</code> (required even for MARKET), <code>OrderFlag</code> (SINGLE/OCO), <code>Validity</code> (DAY/IOC), <code>DisclosedQuantity</code></li>
             <li><strong>FOREVER (OCO)</strong>: <code>Price1</code>, <code>TriggerPrice1</code>, <code>Quantity1</code></li>
             <li><strong>Optional (Derivatives)</strong>: <code>StrikePrice</code>, <code>ExpiryDate</code>, <code>OptionType</code></li>
@@ -142,6 +143,10 @@
             {% endif %}
         </div>
         {% endif %}
+
+        <div style="margin: 8px 0 16px; color: #374151; font-size: 0.95em;">
+            Tip: Rows with deferred Super tolerance will show as “Queued” until LTP enters the tolerance band; they will auto-place via the background worker.
+        </div>
 
         <div style="overflow-x: auto;">
             <table style="width: 100%; border-collapse: collapse;">

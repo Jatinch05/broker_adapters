@@ -155,6 +155,18 @@
                 <div class="hint">Exit if price reaches this level</div>
             </div>
 
+            <div class="form-group" id="toleranceGroup">
+                <label for="tolerance">Tolerance % (Optional, Super BUY deferral)</label>
+                <input 
+                    type="number" 
+                    id="tolerance" 
+                    name="tolerance" 
+                    min="0" 
+                    step="0.01" 
+                    placeholder="e.g., 0.25">
+                <div class="hint">For Super BUY + LIMIT only: queue until LTP is within +/- tolerance of your entry price</div>
+            </div>
+
             <!-- Trailing & Tag (SUPER) -->
             <div class="form-group">
                 <label for="trailing_jump">Trailing Jump</label>
@@ -249,6 +261,7 @@
         <div><strong>For SELL orders:</strong> target_price &lt; entry_price &lt; stop_loss_price</div>
         <div><strong>MARKET orders (Forever):</strong> Price is required per API</div>
         <div><strong>LIMIT orders:</strong> Specify exact entry price</div>
+        <div><strong>Deferred Super buys:</strong> Add Tolerance% (with LIMIT + BUY) to queue until LTP is within your band</div>
     </div>
 </div>
 {% endblock %}
@@ -375,6 +388,7 @@ function toggleFlow() {
     const flow = document.getElementById('order_flow').value;
     const superIds = ['target_price','stop_loss_price','trailing_jump'];
     const foreverIds = ['trigger_price','order_flag','validity','disclosed_quantity','price1','trigger_price1','quantity1'];
+    const tolGroup = document.getElementById('toleranceGroup');
     const superVisible = (flow === 'SUPER');
     superIds.forEach(id => {
         const el = document.getElementById(id);
@@ -383,6 +397,13 @@ function toggleFlow() {
         el.required = superVisible && (id !== 'trailing_jump');
         el.disabled = !superVisible;
     });
+    if (tolGroup) {
+        tolGroup.style.display = superVisible ? 'block' : 'none';
+        const tolInput = document.getElementById('tolerance');
+        if (tolInput) {
+            tolInput.disabled = !superVisible;
+        }
+    }
     foreverIds.forEach(id => {
         const el = document.getElementById(id);
         const group = el.closest('.form-group');
@@ -411,5 +432,44 @@ document.getElementById('order_flag').addEventListener('change', () => {
 document.getElementById('order_type').addEventListener('change', () => {
     togglePrice();
 });
+
+function enforceToleranceRules() {
+    const flow = document.getElementById('order_flow').value;
+    const txnType = document.getElementById('txn_type').value;
+    const orderType = document.getElementById('order_type').value;
+    const tolInput = document.getElementById('tolerance');
+    const priceInput = document.getElementById('price');
+    if (!tolInput) return;
+
+    if (flow !== 'SUPER' || txnType !== 'BUY') {
+        tolInput.value = '';
+        tolInput.disabled = flow !== 'SUPER';
+        if (priceInput) priceInput.removeAttribute('required');
+        return;
+    }
+
+    tolInput.disabled = false;
+    const hasTolerance = tolInput.value && Number(tolInput.value) > 0;
+    if (hasTolerance) {
+        if (priceInput) {
+            priceInput.setAttribute('required', 'required');
+            priceInput.disabled = false;
+        }
+        if (orderType === 'MARKET') {
+            document.getElementById('order_type').value = 'LIMIT';
+            togglePrice();
+        }
+    }
+}
+
+['txn_type','order_flow','order_type','tolerance'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+        el.addEventListener('change', enforceToleranceRules);
+        el.addEventListener('input', enforceToleranceRules);
+    }
+});
+
+enforceToleranceRules();
 </script>
 {% endblock %}
