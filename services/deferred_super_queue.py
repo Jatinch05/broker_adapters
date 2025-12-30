@@ -266,12 +266,22 @@ def fetch_ltp(*, payload: Dict[str, List[str]], client_id: str, access_token: st
 def resolve_instrument(symbol: str, exchange: str, strike_price=None, expiry_date=None, option_type=None):
     DhanStore.load()
     inst = None
-    if strike_price is not None or expiry_date is not None or option_type is not None:
+    has_derivative_details = (strike_price is not None or expiry_date is not None or option_type is not None)
+    
+    if has_derivative_details:
+        # Advanced lookup for derivatives
         inst = DhanStore.lookup_by_details(symbol, strike_price=strike_price, expiry_date=expiry_date, option_type=option_type)
-    if inst is None:
+        if inst is None:
+            raise ValueError(
+                f"Derivative contract not found: symbol={symbol}, strike={strike_price}, "
+                f"expiry={expiry_date}, option_type={option_type}. Check instrument master."
+            )
+    else:
+        # Standard symbol lookup
         inst = DhanStore.lookup_symbol(symbol)
-    if inst is None:
-        raise ValueError(f"Symbol '{symbol}' not found in Dhan instruments")
+        if inst is None:
+            raise ValueError(f"Symbol '{symbol}' not found in Dhan instruments")
+    
     api_seg = API_SEGMENT_MAP.get(exchange, exchange)
     return inst, api_seg
 
